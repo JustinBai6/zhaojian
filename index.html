@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>照鉴</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500&family=IBM+Plex+Mono:wght@300;400&display=swap');
+
+  :root {
+    --bg: #08080a;
+    --surface: #0f0f13;
+    --surface-raised: #16161c;
+    --border: #1e1e26;
+    --border-subtle: #14141a;
+    --text: #c8c8d0;
+    --text-dim: #5c5c6a;
+    --text-muted: #3a3a46;
+    --accent: #8b7ec8;
+    --accent-dim: #5a5080;
+    --observation: #d8d4e0;
+    --thinking: #44445a;
+    --vent: #6b8f71;
+    --danger: #c87070;
+    --serif: 'Noto Serif SC', 'Songti SC', serif;
+    --mono: 'IBM Plex Mono', 'SF Mono', monospace;
+    --sans: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    font-size: 15px;
+    line-height: 1.7;
+  }
+
+  /* --- Layout --- */
+  .app { display: flex; height: 100vh; }
+
+  .sidebar {
+    width: 240px;
+    min-width: 240px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .sidebar-header {
+    padding: 28px 20px 20px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .sidebar-header h1 {
+    font-family: var(--serif);
+    font-weight: 300;
+    font-size: 24px;
+    letter-spacing: 8px;
+    color: var(--text-dim);
+    margin-bottom: 2px;
+  }
+
+  .sidebar-header .subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 2px;
+    font-family: var(--mono);
+  }
+
+  .container-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+
+  .container-item {
+    padding: 12px 20px;
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    transition: all 0.15s;
+    position: relative;
+  }
+
+  .container-item:hover { background: var(--surface-raised); }
+
+  .container-item.active {
+    background: var(--surface-raised);
+    border-left-color: var(--accent-dim);
+  }
+
+  .container-item .name {
+    font-size: 14px;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+
+  .container-item .meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+  }
+
+  .container-item .delete-btn {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    padding: 4px;
+  }
+
+  .container-item:hover .delete-btn { opacity: 1; }
+  .container-item .delete-btn:hover { color: var(--danger); }
+
+  .new-container-btn {
+    margin: 8px 16px 16px;
+    padding: 10px;
+    background: none;
+    border: 1px dashed var(--border);
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 13px;
+    font-family: var(--sans);
+    border-radius: 4px;
+    transition: all 0.15s;
+  }
+
+  .new-container-btn:hover {
+    border-color: var(--accent-dim);
+    color: var(--accent);
+  }
+
+  .sidebar-footer {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .user-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .username-display {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .logout-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 11px;
+    font-family: var(--mono);
+    padding: 2px 0;
+    transition: color 0.15s;
+  }
+
+  .logout-btn:hover { color: var(--danger); }
+
+  .api-key-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 11px;
+    font-family: var(--mono);
+    padding: 4px 0;
+    transition: color 0.15s;
+  }
+
+  .api-key-btn:hover { color: var(--text-dim); }
+  .api-key-btn.configured { color: var(--vent); }
+
+  /* --- Main --- */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .empty-state {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    color: var(--text-muted);
+  }
+
+  .empty-state .mirror-char {
+    font-family: var(--serif);
+    font-size: 64px;
+    font-weight: 300;
+    color: var(--border);
+    margin-bottom: 16px;
+  }
+
+  .empty-state p {
+    font-size: 13px;
+    letter-spacing: 1px;
+  }
+
+  /* --- Entry Feed --- */
+  .feed {
+    flex: 1;
+    overflow-y: auto;
+    padding: 32px 48px;
+    scroll-behavior: smooth;
+  }
+
+  .entry-block {
+    margin-bottom: 32px;
+    max-width: 680px;
+  }
+
+  .entry-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .entry-type {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    padding: 2px 8px;
+    border-radius: 2px;
+    background: var(--surface-raised);
+    color: var(--text-muted);
+  }
+
+  .entry-type.reflect { color: var(--accent-dim); }
+  .entry-type.vent { color: var(--vent); }
+
+  .entry-time {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .entry-text {
+    font-family: var(--serif);
+    font-size: 15px;
+    line-height: 1.9;
+    color: var(--text);
+    padding: 0 0 0 2px;
+  }
+
+  /* --- Observation --- */
+  .observation-block {
+    margin-top: 16px;
+    padding-left: 16px;
+    border-left: 2px solid var(--accent-dim);
+  }
+
+  .observation-text {
+    font-family: var(--serif);
+    font-size: 15px;
+    line-height: 1.9;
+    color: var(--observation);
+    font-weight: 400;
+  }
+
+  .observation-text.vent-ack {
+    color: var(--text-dim);
+    font-style: italic;
+  }
+
+  /* --- Thinking Trace --- */
+  .thinking-toggle {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 4px 0;
+    margin-top: 8px;
+    transition: color 0.15s;
+  }
+
+  .thinking-toggle:hover { color: var(--text-dim); }
+
+  .thinking-content {
+    display: none;
+    margin-top: 8px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.8;
+    color: var(--thinking);
+    white-space: pre-wrap;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .thinking-content.open { display: block; }
+
+  /* --- Streaming indicator --- */
+  .streaming-block {
+    margin-top: 16px;
+    padding-left: 16px;
+    border-left: 2px solid var(--accent-dim);
+  }
+
+  .streaming-phase {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    letter-spacing: 1px;
+  }
+
+  .streaming-thinking {
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.8;
+    color: var(--thinking);
+    white-space: pre-wrap;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+
+  .streaming-content {
+    font-family: var(--serif);
+    font-size: 15px;
+    line-height: 1.9;
+    color: var(--observation);
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 0.8; }
+  }
+
+  .streaming-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 14px;
+    background: var(--accent);
+    margin-left: 2px;
+    vertical-align: middle;
+    animation: pulse 1.2s infinite;
+  }
+
+  /* --- Input Area --- */
+  .input-area {
+    padding: 20px 48px 28px;
+    border-top: 1px solid var(--border-subtle);
+    background: var(--surface);
+  }
+
+  .input-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .type-toggle {
+    display: flex;
+    gap: 0;
+    background: var(--bg);
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+
+  .type-toggle button {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    padding: 6px 14px;
+    text-transform: uppercase;
+    transition: all 0.15s;
+  }
+
+  .type-toggle button.active {
+    background: var(--surface-raised);
+    color: var(--text);
+  }
+
+  .type-toggle button.active.reflect { color: var(--accent); }
+  .type-toggle button.active.vent { color: var(--vent); }
+
+  .char-count {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-left: auto;
+  }
+
+  .input-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+  }
+
+  .input-row textarea {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--serif);
+    font-size: 15px;
+    line-height: 1.8;
+    padding: 14px 16px;
+    resize: none;
+    border-radius: 4px;
+    min-height: 60px;
+    max-height: 200px;
+    transition: border-color 0.15s;
+    outline: none;
+  }
+
+  .input-row textarea:focus {
+    border-color: var(--accent-dim);
+  }
+
+  .input-row textarea::placeholder {
+    color: var(--text-muted);
+  }
+
+  .send-btn {
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 14px 20px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 12px;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .send-btn:hover {
+    border-color: var(--accent-dim);
+    color: var(--accent);
+  }
+
+  .send-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  /* --- Modal --- */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-overlay.open { display: flex; }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 32px;
+    width: 400px;
+    max-width: 90vw;
+  }
+
+  .modal h2 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: 18px;
+    color: var(--text);
+    margin-bottom: 20px;
+  }
+
+  .modal label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    font-family: var(--mono);
+    letter-spacing: 1px;
+  }
+
+  .modal input, .modal textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    padding: 10px 12px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .modal input:focus, .modal textarea:focus {
+    border-color: var(--accent-dim);
+  }
+
+  .modal textarea { resize: vertical; min-height: 60px; }
+
+  .modal-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 8px;
+  }
+
+  .modal-actions button {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 8px 20px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: var(--sans);
+    transition: all 0.15s;
+  }
+
+  .modal-actions button:hover {
+    border-color: var(--accent-dim);
+    color: var(--text);
+  }
+
+  .modal-actions button.primary {
+    background: var(--surface-raised);
+    border-color: var(--accent-dim);
+    color: var(--accent);
+  }
+
+  /* --- Error --- */
+  .error-msg {
+    padding: 12px 16px;
+    background: rgba(200, 112, 112, 0.1);
+    border: 1px solid rgba(200, 112, 112, 0.2);
+    color: var(--danger);
+    font-size: 13px;
+    border-radius: 4px;
+    margin-top: 8px;
+  }
+
+  /* --- Scrollbar --- */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+  /* --- Responsive --- */
+  @media (max-width: 768px) {
+    .sidebar { width: 200px; min-width: 200px; }
+    .feed { padding: 24px 20px; }
+    .input-area { padding: 16px 20px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h1>照鉴</h1>
+      <div class="subtitle">cognitive mirror</div>
+    </div>
+    <div class="container-list" id="containerList"></div>
+    <button class="new-container-btn" onclick="openModal('container')">+ 新容器</button>
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <span class="username-display" id="usernameDisplay"></span>
+        <button class="logout-btn" onclick="handleLogout()">退出</button>
+      </div>
+      <button class="api-key-btn" id="apiKeyBtn" onclick="openModal('apikey')">⚙ API Key</button>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main" id="mainArea">
+    <div class="empty-state" id="emptyState">
+      <div class="mirror-char">鉴</div>
+      <p>选择或创建一个容器</p>
+    </div>
+
+    <div id="activeView" style="display:none; flex:1; display:none; flex-direction:column; overflow:hidden;">
+      <div class="feed" id="feed"></div>
+      <div class="input-area">
+        <div class="input-controls">
+          <div class="type-toggle">
+            <button class="active reflect" data-type="reflect" onclick="setEntryType('reflect')">审视</button>
+            <button data-type="vent" onclick="setEntryType('vent')">倾诉</button>
+          </div>
+          <span class="char-count" id="charCount">0</span>
+        </div>
+        <div class="input-row">
+          <textarea id="entryInput" placeholder="写点什么..." rows="2" oninput="updateCharCount()"></textarea>
+          <button class="send-btn" id="sendBtn" onclick="submitEntry()">记录</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Container Modal -->
+<div class="modal-overlay" id="containerModal">
+  <div class="modal">
+    <h2>新容器</h2>
+    <label>名称</label>
+    <input id="containerName" placeholder="例：和小羊的关系" autofocus>
+    <label>描述（可选）</label>
+    <textarea id="containerDesc" placeholder="这个容器探索什么心理域？"></textarea>
+    <div class="modal-actions">
+      <button onclick="closeModals()">取消</button>
+      <button class="primary" onclick="createContainer()">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- API Key Modal -->
+<div class="modal-overlay" id="apikeyModal">
+  <div class="modal">
+    <h2>DeepSeek API Key</h2>
+    <p style="font-size:13px;color:var(--text-dim);margin-bottom:16px;" id="keyStatus"></p>
+    <label>你自己的 API Key（可选）</label>
+    <input id="apiKeyInput" type="password" placeholder="sk-...">
+    <p style="font-size:11px;color:var(--text-muted);margin-top:-10px;margin-bottom:16px;">留空则使用共享额度</p>
+    <div class="modal-actions">
+      <button onclick="closeModals()">取消</button>
+      <button class="primary" onclick="saveApiKey()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- State ---
+let state = {
+  containers: [],
+  activeContainer: null,
+  entryType: 'reflect',
+  streaming: false,
+};
+
+// --- Init ---
+async function init() {
+  const meResp = await fetch('/api/auth/me');
+  const me = await meResp.json();
+  if (!me.authenticated) { window.location.reload(); return; }
+  document.getElementById('usernameDisplay').textContent = me.username;
+
+  const configResp = await fetch('/api/config');
+  const config = await configResp.json();
+  const btn = document.getElementById('apiKeyBtn');
+  if (config.has_own_key) {
+    btn.classList.add('configured');
+    btn.textContent = '⚙ 已配置自有Key';
+  } else if (config.has_shared_key) {
+    btn.classList.add('configured');
+    btn.textContent = '⚙ 使用共享额度';
+  }
+
+  const resp = await fetch('/api/containers');
+  const data = await resp.json();
+  state.containers = data.containers;
+  renderContainers();
+}
+
+async function handleLogout() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  window.location.reload();
+}
+
+// --- Containers ---
+function renderContainers() {
+  const list = document.getElementById('containerList');
+  list.innerHTML = state.containers.map(c => `
+    <div class="container-item ${state.activeContainer?.id === c.id ? 'active' : ''}"
+         onclick="selectContainer('${c.id}')">
+      <div class="name">${esc(c.name)}</div>
+      <div class="meta">${c.entries.length} 条</div>
+      <button class="delete-btn" onclick="event.stopPropagation(); deleteContainer('${c.id}')" title="删除">×</button>
+    </div>
+  `).join('');
+}
+
+function selectContainer(id) {
+  state.activeContainer = state.containers.find(c => c.id === id);
+  renderContainers();
+  renderFeed();
+  document.getElementById('emptyState').style.display = 'none';
+  const av = document.getElementById('activeView');
+  av.style.display = 'flex';
+}
+
+async function createContainer() {
+  const name = document.getElementById('containerName').value.trim();
+  if (!name) return;
+  const desc = document.getElementById('containerDesc').value.trim();
+
+  const resp = await fetch('/api/containers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, description: desc }),
+  });
+  const container = await resp.json();
+  state.containers.push(container);
+  closeModals();
+  document.getElementById('containerName').value = '';
+  document.getElementById('containerDesc').value = '';
+  selectContainer(container.id);
+}
+
+async function deleteContainer(id) {
+  if (!confirm('删除这个容器和所有日记？')) return;
+  await fetch(`/api/containers/${id}`, { method: 'DELETE' });
+  state.containers = state.containers.filter(c => c.id !== id);
+  if (state.activeContainer?.id === id) {
+    state.activeContainer = null;
+    document.getElementById('activeView').style.display = 'none';
+    document.getElementById('emptyState').style.display = 'flex';
+  }
+  renderContainers();
+}
+
+// --- Entry Type ---
+function setEntryType(type) {
+  state.entryType = type;
+  document.querySelectorAll('.type-toggle button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.type === type);
+    btn.classList.toggle(type, btn.dataset.type === type);
+  });
+}
+
+function updateCharCount() {
+  const input = document.getElementById('entryInput');
+  document.getElementById('charCount').textContent = input.value.length;
+  // Auto-resize
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+}
+
+// --- Feed ---
+function renderFeed() {
+  const feed = document.getElementById('feed');
+  if (!state.activeContainer) return;
+
+  feed.innerHTML = state.activeContainer.entries.map((entry, i) => {
+    const time = new Date(entry.timestamp).toLocaleString('zh-CN', {
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+    const typeLabel = entry.type === 'vent' ? '倾诉' : '审视';
+    const typeClass = entry.type;
+
+    let observationHtml = '';
+    if (entry.observation) {
+      const isVent = entry.type === 'vent';
+      observationHtml = `
+        <div class="observation-block">
+          <div class="observation-text ${isVent ? 'vent-ack' : ''}">${esc(entry.observation)}</div>
+          ${entry.thinking ? `
+            <button class="thinking-toggle" onclick="toggleThinking(this)">› 思考过程</button>
+            <div class="thinking-content">${esc(entry.thinking)}</div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    return `
+      <div class="entry-block">
+        <div class="entry-header">
+          <span class="entry-type ${typeClass}">${typeLabel}</span>
+          <span class="entry-time">${time}</span>
+        </div>
+        <div class="entry-text">${esc(entry.text)}</div>
+        ${observationHtml}
+      </div>
+    `;
+  }).join('');
+
+  // Add streaming block placeholder
+  feed.innerHTML += '<div id="streamingArea"></div>';
+  scrollToBottom();
+}
+
+function toggleThinking(btn) {
+  const content = btn.nextElementSibling;
+  const isOpen = content.classList.toggle('open');
+  btn.textContent = isOpen ? '⌄ 思考过程' : '› 思考过程';
+}
+
+// --- Submit ---
+async function submitEntry() {
+  if (state.streaming) return;
+  const input = document.getElementById('entryInput');
+  const text = input.value.trim();
+  if (!text || !state.activeContainer) return;
+
+  const sendBtn = document.getElementById('sendBtn');
+  sendBtn.disabled = true;
+
+  const resp = await fetch('/api/entry', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      container_id: state.activeContainer.id,
+      text: text,
+      type: state.entryType,
+    }),
+  });
+
+  const data = await resp.json();
+
+  if (data.error) {
+    alert(data.error);
+    sendBtn.disabled = false;
+    return;
+  }
+
+  // Update local state
+  const containerIdx = state.containers.findIndex(c => c.id === state.activeContainer.id);
+  // Re-fetch to get updated entries
+  const containerResp = await fetch('/api/containers');
+  const containerData = await containerResp.json();
+  state.containers = containerData.containers;
+  state.activeContainer = state.containers.find(c => c.id === state.activeContainer.id);
+  renderContainers();
+
+  input.value = '';
+  updateCharCount();
+
+  if (!data.stream) {
+    // Vent mode - already saved
+    renderFeed();
+    sendBtn.disabled = false;
+    return;
+  }
+
+  // Reflect mode - stream observation
+  renderFeed();
+  state.streaming = true;
+  await streamObservation(state.activeContainer.id, data.entry_id);
+  state.streaming = false;
+  sendBtn.disabled = false;
+
+  // Re-fetch to get saved observation
+  const finalResp = await fetch('/api/containers');
+  const finalData = await finalResp.json();
+  state.containers = finalData.containers;
+  state.activeContainer = state.containers.find(c => c.id === state.activeContainer.id);
+  renderContainers();
+  renderFeed();
+}
+
+async function streamObservation(containerId, entryId) {
+  const area = document.getElementById('streamingArea');
+  area.innerHTML = `
+    <div class="streaming-block">
+      <div class="streaming-phase" id="streamPhase">思考中...</div>
+      <div class="streaming-thinking" id="streamThinking"></div>
+      <div class="streaming-content" id="streamContent" style="display:none"></div>
+    </div>
+  `;
+  scrollToBottom();
+
+  return new Promise((resolve) => {
+    const resp = fetch('/api/observe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ container_id: containerId, entry_id: entryId }),
+    });
+
+    resp.then(async (r) => {
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let hasContent = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+
+            if (data.type === 'thinking') {
+              const el = document.getElementById('streamThinking');
+              el.textContent += data.text;
+              el.scrollTop = el.scrollHeight;
+              scrollToBottom();
+            }
+
+            if (data.type === 'content') {
+              if (!hasContent) {
+                hasContent = true;
+                document.getElementById('streamPhase').textContent = '观察';
+                document.getElementById('streamThinking').style.display = 'none';
+                document.getElementById('streamContent').style.display = 'block';
+              }
+              document.getElementById('streamContent').textContent += data.text;
+              scrollToBottom();
+            }
+
+            if (data.type === 'error') {
+              area.innerHTML += `<div class="error-msg">${esc(data.text)}</div>`;
+              resolve();
+              return;
+            }
+
+            if (data.type === 'done') {
+              resolve();
+              return;
+            }
+          } catch (e) {}
+        }
+      }
+      resolve();
+    }).catch(() => resolve());
+  });
+}
+
+// --- Modals ---
+function openModal(type) {
+  closeModals();
+  document.getElementById(`${type}Modal`).classList.add('open');
+  const firstInput = document.querySelector(`#${type}Modal input`);
+  if (firstInput) setTimeout(() => firstInput.focus(), 100);
+}
+
+function closeModals() {
+  document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('open'));
+}
+
+async function saveApiKey() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  await fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ api_key: key }),
+  });
+  const btn = document.getElementById('apiKeyBtn');
+  btn.classList.add('configured');
+  btn.textContent = key ? '⚙ 已配置自有Key' : '⚙ 使用共享额度';
+  document.getElementById('apiKeyInput').value = '';
+  closeModals();
+}
+
+// --- Utilities ---
+function esc(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+}
+
+function scrollToBottom() {
+  const feed = document.getElementById('feed');
+  if (feed) feed.scrollTop = feed.scrollHeight;
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeModals();
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    submitEntry();
+  }
+});
+
+// Close modal on overlay click
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeModals();
+  });
+});
+
+// Init
+init();
+</script>
+</body>
+</html>
