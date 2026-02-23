@@ -6,625 +6,165 @@
 <title>照鉴</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500&family=IBM+Plex+Mono:wght@300;400&display=swap');
-
   :root {
-    --bg: #08080a;
-    --surface: #0f0f13;
-    --surface-raised: #16161c;
-    --border: #1e1e26;
-    --border-subtle: #14141a;
-    --text: #c8c8d0;
-    --text-dim: #5c5c6a;
-    --text-muted: #3a3a46;
-    --accent: #8b7ec8;
-    --accent-dim: #5a5080;
-    --observation: #d8d4e0;
-    --thinking: #44445a;
-    --vent: #6b8f71;
-    --danger: #c87070;
-    --serif: 'Noto Serif SC', 'Songti SC', serif;
-    --mono: 'IBM Plex Mono', 'SF Mono', monospace;
-    --sans: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  }
-
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-
-  body {
-    font-family: var(--sans);
-    background: var(--bg);
-    color: var(--text);
-    height: 100vh;
-    overflow: hidden;
-    font-size: 15px;
-    line-height: 1.7;
-  }
-
-  /* --- Layout --- */
-  .app { display: flex; height: 100vh; }
-
-  .sidebar {
-    width: 240px;
-    min-width: 240px;
-    background: var(--surface);
-    border-right: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  .sidebar-header {
-    padding: 28px 20px 20px;
-    border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .sidebar-header h1 {
-    font-family: var(--serif);
-    font-weight: 300;
-    font-size: 24px;
-    letter-spacing: 8px;
-    color: var(--text-dim);
-    margin-bottom: 2px;
-  }
-
-  .sidebar-header .subtitle {
-    font-size: 11px;
-    color: var(--text-muted);
-    letter-spacing: 2px;
-    font-family: var(--mono);
-  }
-
-  .container-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px 0;
-  }
-
-  .container-item {
-    padding: 12px 20px;
-    cursor: pointer;
-    border-left: 2px solid transparent;
-    transition: all 0.15s;
-    position: relative;
-  }
-
-  .container-item:hover { background: var(--surface-raised); }
-
-  .container-item.active {
-    background: var(--surface-raised);
-    border-left-color: var(--accent-dim);
-  }
-
-  .container-item .name {
-    font-size: 14px;
-    color: var(--text);
-    margin-bottom: 2px;
-  }
-
-  .container-item .meta {
-    font-size: 11px;
-    color: var(--text-muted);
-    font-family: var(--mono);
-  }
-
-  .container-item .delete-btn {
-    position: absolute;
-    right: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    font-size: 14px;
-    opacity: 0;
-    transition: opacity 0.15s;
-    padding: 4px;
-  }
-
-  .container-item:hover .delete-btn { opacity: 1; }
-  .container-item .delete-btn:hover { color: var(--danger); }
-
-  .new-container-btn {
-    margin: 8px 16px 16px;
-    padding: 10px;
-    background: none;
-    border: 1px dashed var(--border);
-    color: var(--text-dim);
-    cursor: pointer;
-    font-size: 13px;
-    font-family: var(--sans);
-    border-radius: 4px;
-    transition: all 0.15s;
-  }
-
-  .new-container-btn:hover {
-    border-color: var(--accent-dim);
-    color: var(--accent);
-  }
-
-  .sidebar-footer {
-    padding: 12px 16px;
-    border-top: 1px solid var(--border-subtle);
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .user-info {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .username-display {
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--text-dim);
-  }
-
-  .logout-btn {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    font-size: 11px;
-    font-family: var(--mono);
-    padding: 2px 0;
-    transition: color 0.15s;
-  }
-
-  .logout-btn:hover { color: var(--danger); }
-
-  .api-key-btn {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    font-size: 11px;
-    font-family: var(--mono);
-    padding: 4px 0;
-    transition: color 0.15s;
-  }
-
-  .api-key-btn:hover { color: var(--text-dim); }
-  .api-key-btn.configured { color: var(--vent); }
-
-  /* --- Main --- */
-  .main {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  .empty-state {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    color: var(--text-muted);
-  }
-
-  .empty-state .mirror-char {
-    font-family: var(--serif);
-    font-size: 64px;
-    font-weight: 300;
-    color: var(--border);
-    margin-bottom: 16px;
-  }
-
-  .empty-state p {
-    font-size: 13px;
-    letter-spacing: 1px;
-  }
-
-  /* --- Entry Feed --- */
-  .feed {
-    flex: 1;
-    overflow-y: auto;
-    padding: 32px 48px;
-    scroll-behavior: smooth;
-  }
-
-  .entry-block {
-    margin-bottom: 32px;
-    max-width: 680px;
-  }
-
-  .entry-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 8px;
-  }
-
-  .entry-type {
-    font-family: var(--mono);
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    padding: 2px 8px;
-    border-radius: 2px;
-    background: var(--surface-raised);
-    color: var(--text-muted);
-  }
-
-  .entry-type.reflect { color: var(--accent-dim); }
-  .entry-type.vent { color: var(--vent); }
-
-  .entry-time {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-
-  .entry-text {
-    font-family: var(--serif);
-    font-size: 15px;
-    line-height: 1.9;
-    color: var(--text);
-    padding: 0 0 0 2px;
-  }
-
-  /* --- Observation --- */
-  .observation-block {
-    margin-top: 16px;
-    padding-left: 16px;
-    border-left: 2px solid var(--accent-dim);
-  }
-
-  .observation-text {
-    font-family: var(--serif);
-    font-size: 15px;
-    line-height: 1.9;
-    color: var(--observation);
-    font-weight: 400;
-  }
-
-  .observation-text.vent-ack {
-    color: var(--text-dim);
-    font-style: italic;
-  }
-
-  /* --- Thinking Trace --- */
-  .thinking-toggle {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    font-family: var(--mono);
-    font-size: 11px;
-    padding: 4px 0;
-    margin-top: 8px;
-    transition: color 0.15s;
-  }
-
-  .thinking-toggle:hover { color: var(--text-dim); }
-
-  .thinking-content {
-    display: none;
-    margin-top: 8px;
-    padding: 12px 16px;
-    background: var(--surface);
-    border-radius: 4px;
-    font-family: var(--mono);
-    font-size: 12px;
-    line-height: 1.8;
-    color: var(--thinking);
-    white-space: pre-wrap;
-    max-height: 400px;
-    overflow-y: auto;
-  }
-
-  .thinking-content.open { display: block; }
-
-  /* --- Streaming indicator --- */
-  .streaming-block {
-    margin-top: 16px;
-    padding-left: 16px;
-    border-left: 2px solid var(--accent-dim);
-  }
-
-  .streaming-phase {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-bottom: 6px;
-    letter-spacing: 1px;
-  }
-
-  .streaming-thinking {
-    font-family: var(--mono);
-    font-size: 12px;
-    line-height: 1.8;
-    color: var(--thinking);
-    white-space: pre-wrap;
-    max-height: 300px;
-    overflow-y: auto;
-  }
-
-  .streaming-content {
-    font-family: var(--serif);
-    font-size: 15px;
-    line-height: 1.9;
-    color: var(--observation);
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 0.3; }
-    50% { opacity: 0.8; }
-  }
-
-  .streaming-cursor {
-    display: inline-block;
-    width: 2px;
-    height: 14px;
-    background: var(--accent);
-    margin-left: 2px;
-    vertical-align: middle;
-    animation: pulse 1.2s infinite;
-  }
-
-  /* --- Input Area --- */
-  .input-area {
-    padding: 20px 48px 28px;
-    border-top: 1px solid var(--border-subtle);
-    background: var(--surface);
-  }
-
-  .input-controls {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 12px;
-  }
-
-  .type-toggle {
-    display: flex;
-    gap: 0;
-    background: var(--bg);
-    border-radius: 4px;
-    overflow: hidden;
-    border: 1px solid var(--border);
-  }
-
-  .type-toggle button {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: 1.5px;
-    padding: 6px 14px;
-    text-transform: uppercase;
-    transition: all 0.15s;
-  }
-
-  .type-toggle button.active {
-    background: var(--surface-raised);
-    color: var(--text);
-  }
-
-  .type-toggle button.active.reflect { color: var(--accent); }
-  .type-toggle button.active.vent { color: var(--vent); }
-
-  .char-count {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-left: auto;
-  }
-
-  .input-row {
-    display: flex;
-    gap: 12px;
-    align-items: flex-end;
-  }
-
-  .input-row textarea {
-    flex: 1;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    color: var(--text);
-    font-family: var(--serif);
-    font-size: 15px;
-    line-height: 1.8;
-    padding: 14px 16px;
-    resize: none;
-    border-radius: 4px;
-    min-height: 60px;
-    max-height: 200px;
-    transition: border-color 0.15s;
-    outline: none;
-  }
-
-  .input-row textarea:focus {
-    border-color: var(--accent-dim);
-  }
-
-  .input-row textarea::placeholder {
-    color: var(--text-muted);
-  }
-
-  .send-btn {
-    background: var(--surface-raised);
-    border: 1px solid var(--border);
-    color: var(--text-dim);
-    cursor: pointer;
-    padding: 14px 20px;
-    border-radius: 4px;
-    font-family: var(--mono);
-    font-size: 12px;
-    transition: all 0.15s;
-    white-space: nowrap;
-  }
-
-  .send-btn:hover {
-    border-color: var(--accent-dim);
-    color: var(--accent);
-  }
-
-  .send-btn:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-  }
-
-  /* --- Modal --- */
-  .modal-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.7);
-    z-index: 100;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .modal-overlay.open { display: flex; }
-
-  .modal {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 32px;
-    width: 400px;
-    max-width: 90vw;
-  }
-
-  .modal h2 {
-    font-family: var(--serif);
-    font-weight: 400;
-    font-size: 18px;
-    color: var(--text);
-    margin-bottom: 20px;
-  }
-
-  .modal label {
-    display: block;
-    font-size: 12px;
-    color: var(--text-dim);
-    margin-bottom: 6px;
-    font-family: var(--mono);
-    letter-spacing: 1px;
-  }
-
-  .modal input, .modal textarea {
-    width: 100%;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    color: var(--text);
-    font-family: var(--sans);
-    font-size: 14px;
-    padding: 10px 12px;
-    border-radius: 4px;
-    margin-bottom: 16px;
-    outline: none;
-    transition: border-color 0.15s;
-  }
-
-  .modal input:focus, .modal textarea:focus {
-    border-color: var(--accent-dim);
-  }
-
-  .modal textarea { resize: vertical; min-height: 60px; }
-
-  .modal-actions {
-    display: flex;
-    gap: 10px;
-    justify-content: flex-end;
-    margin-top: 8px;
-  }
-
-  .modal-actions button {
-    background: none;
-    border: 1px solid var(--border);
-    color: var(--text-dim);
-    cursor: pointer;
-    padding: 8px 20px;
-    border-radius: 4px;
-    font-size: 13px;
-    font-family: var(--sans);
-    transition: all 0.15s;
-  }
-
-  .modal-actions button:hover {
-    border-color: var(--accent-dim);
-    color: var(--text);
-  }
-
-  .modal-actions button.primary {
-    background: var(--surface-raised);
-    border-color: var(--accent-dim);
-    color: var(--accent);
-  }
-
-  /* --- Error --- */
-  .error-msg {
-    padding: 12px 16px;
-    background: rgba(200, 112, 112, 0.1);
-    border: 1px solid rgba(200, 112, 112, 0.2);
-    color: var(--danger);
-    font-size: 13px;
-    border-radius: 4px;
-    margin-top: 8px;
-  }
-
-  /* --- Scrollbar --- */
-  ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
-
-  /* --- Responsive --- */
-  @media (max-width: 768px) {
-    .sidebar { width: 200px; min-width: 200px; }
-    .feed { padding: 24px 20px; }
-    .input-area { padding: 16px 20px 20px; }
-  }
+    --bg: #08080a; --surface: #0f0f13; --raised: #16161c; --border: #1e1e26;
+    --bsub: #14141a; --text: #c8c8d0; --dim: #5c5c6a; --muted: #3a3a46;
+    --accent: #8b7ec8; --accdim: #5a5080; --obs: #d8d4e0; --think: #44445a;
+    --vent: #6b8f71; --danger: #c87070;
+    --serif: 'Noto Serif SC','Songti SC',serif;
+    --mono: 'IBM Plex Mono','SF Mono',monospace;
+    --sans: -apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:var(--sans); background:var(--bg); color:var(--text); height:100vh; overflow:hidden; font-size:15px; line-height:1.7; }
+  .app { display:flex; height:100vh; }
+
+  /* Panel 1: Containers */
+  .panel-containers { width:200px; min-width:200px; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; }
+  .panel-header { padding:20px 16px 16px; border-bottom:1px solid var(--bsub); }
+  .panel-header h1 { font-family:var(--serif); font-weight:300; font-size:22px; letter-spacing:8px; color:var(--dim); }
+  .panel-header .sub { font-size:10px; color:var(--muted); letter-spacing:2px; font-family:var(--mono); }
+  .list { flex:1; overflow-y:auto; padding:6px 0; }
+  .list-item { padding:10px 16px; cursor:pointer; border-left:2px solid transparent; transition:all .12s; position:relative; }
+  .list-item:hover { background:var(--raised); }
+  .list-item.active { background:var(--raised); border-left-color:var(--accdim); }
+  .list-item .name { font-size:13px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .list-item .meta { font-size:10px; color:var(--muted); font-family:var(--mono); }
+  .list-item .del { position:absolute; right:8px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--muted); cursor:pointer; font-size:13px; opacity:0; transition:opacity .12s; padding:4px; }
+  .list-item:hover .del { opacity:1; }
+  .list-item .del:hover { color:var(--danger); }
+  .add-btn { margin:6px 12px 12px; padding:8px; background:none; border:1px dashed var(--border); color:var(--dim); cursor:pointer; font-size:12px; font-family:var(--sans); border-radius:3px; transition:all .12s; }
+  .add-btn:hover { border-color:var(--accdim); color:var(--accent); }
+  .panel-foot { padding:10px 12px; border-top:1px solid var(--bsub); }
+  .panel-foot .row { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
+  .uname { font-family:var(--mono); font-size:11px; color:var(--dim); }
+  .sm-btn { background:none; border:none; color:var(--muted); cursor:pointer; font-size:10px; font-family:var(--mono); padding:2px 0; transition:color .12s; }
+  .sm-btn:hover { color:var(--dim); }
+  .sm-btn.cfg { color:var(--vent); }
+  .sm-btn.out:hover { color:var(--danger); }
+
+  /* Panel 2: Threads */
+  .panel-threads { width:240px; min-width:240px; background:var(--bg); border-right:1px solid var(--border); display:flex; flex-direction:column; }
+  .panel-threads .head { padding:14px 16px; border-bottom:1px solid var(--bsub); display:flex; align-items:center; justify-content:space-between; }
+  .panel-threads .head .cname { font-size:14px; font-weight:500; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .thread-item { padding:12px 16px; cursor:pointer; border-left:2px solid transparent; transition:all .12s; position:relative; }
+  .thread-item:hover { background:var(--raised); }
+  .thread-item.active { background:var(--raised); border-left-color:var(--accdim); }
+  .thread-item .title { font-size:13px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:2px; }
+  .thread-item .preview { font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .thread-item .tmeta { font-size:10px; color:var(--muted); font-family:var(--mono); margin-top:2px; }
+  .thread-item .ttype { font-size:9px; font-family:var(--mono); letter-spacing:1px; text-transform:uppercase; padding:1px 5px; border-radius:2px; background:var(--raised); }
+  .thread-item .ttype.reflect { color:var(--accdim); }
+  .thread-item .ttype.vent { color:var(--vent); }
+  .thread-item .del { position:absolute; right:8px; top:12px; background:none; border:none; color:var(--muted); cursor:pointer; font-size:13px; opacity:0; transition:opacity .12s; }
+  .thread-item:hover .del { opacity:1; }
+  .thread-item .del:hover { color:var(--danger); }
+
+  /* Panel 3: Chat */
+  .panel-chat { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+  .empty { flex:1; display:flex; align-items:center; justify-content:center; flex-direction:column; color:var(--muted); }
+  .empty .big { font-family:var(--serif); font-size:56px; font-weight:300; color:var(--border); margin-bottom:12px; }
+  .empty p { font-size:12px; letter-spacing:1px; }
+
+  /* Messages */
+  .chat-feed { flex:1; overflow-y:auto; padding:28px 40px; }
+  .msg { margin-bottom:24px; max-width:640px; }
+  .msg-head { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+  .msg-role { font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:2px; color:var(--muted); }
+  .msg-role.user { color:var(--dim); }
+  .msg-role.assistant { color:var(--accdim); }
+  .msg-time { font-family:var(--mono); font-size:10px; color:var(--muted); }
+  .msg-body { font-family:var(--serif); font-size:15px; line-height:1.9; }
+  .msg-body.user-text { color:var(--text); }
+  .msg-body.ai-text { color:var(--obs); padding-left:14px; border-left:2px solid var(--accdim); }
+  .msg-body.vent-text { color:var(--dim); font-style:italic; padding-left:14px; border-left:2px solid var(--vent); }
+  .think-toggle { background:none; border:none; color:var(--muted); cursor:pointer; font-family:var(--mono); font-size:10px; padding:3px 0; margin-top:6px; transition:color .12s; }
+  .think-toggle:hover { color:var(--dim); }
+  .think-box { display:none; margin-top:6px; padding:10px 14px; background:var(--surface); border-radius:3px; font-family:var(--mono); font-size:11px; line-height:1.8; color:var(--think); white-space:pre-wrap; max-height:350px; overflow-y:auto; }
+  .think-box.open { display:block; }
+
+  /* Streaming */
+  .stream-block { margin-bottom:24px; max-width:640px; }
+  .stream-phase { font-family:var(--mono); font-size:10px; color:var(--muted); margin-bottom:4px; letter-spacing:1px; }
+  .stream-think { font-family:var(--mono); font-size:11px; line-height:1.8; color:var(--think); white-space:pre-wrap; max-height:250px; overflow-y:auto; }
+  .stream-content { font-family:var(--serif); font-size:15px; line-height:1.9; color:var(--obs); padding-left:14px; border-left:2px solid var(--accdim); }
+  @keyframes pulse { 0%,100%{opacity:.3} 50%{opacity:.8} }
+  .cursor { display:inline-block; width:2px; height:13px; background:var(--accent); margin-left:2px; vertical-align:middle; animation:pulse 1.2s infinite; }
+
+  /* Input */
+  .chat-input { padding:16px 40px 24px; border-top:1px solid var(--bsub); background:var(--surface); }
+  .input-top { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .type-tog { display:flex; background:var(--bg); border-radius:3px; border:1px solid var(--border); overflow:hidden; }
+  .type-tog button { background:none; border:none; color:var(--muted); cursor:pointer; font-family:var(--mono); font-size:10px; letter-spacing:1.5px; padding:5px 12px; text-transform:uppercase; transition:all .12s; }
+  .type-tog button.on { background:var(--raised); color:var(--text); }
+  .type-tog button.on.reflect { color:var(--accent); }
+  .type-tog button.on.vent { color:var(--vent); }
+  .cc { font-family:var(--mono); font-size:10px; color:var(--muted); margin-left:auto; }
+  .input-row { display:flex; gap:10px; align-items:flex-end; }
+  .input-row textarea { flex:1; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:var(--serif); font-size:15px; line-height:1.8; padding:12px 14px; resize:none; border-radius:3px; min-height:52px; max-height:180px; outline:none; transition:border-color .12s; }
+  .input-row textarea:focus { border-color:var(--accdim); }
+  .input-row textarea::placeholder { color:var(--muted); }
+  .send { background:var(--raised); border:1px solid var(--border); color:var(--dim); cursor:pointer; padding:12px 18px; border-radius:3px; font-family:var(--mono); font-size:11px; transition:all .12s; white-space:nowrap; }
+  .send:hover { border-color:var(--accdim); color:var(--accent); }
+  .send:disabled { opacity:.3; cursor:not-allowed; }
+  .err-msg { padding:10px 14px; background:rgba(200,112,112,.1); border:1px solid rgba(200,112,112,.2); color:var(--danger); font-size:12px; border-radius:3px; margin-top:6px; }
+
+  /* New thread input (shown when no thread selected) */
+  .new-thread-input { padding:16px 40px 24px; border-top:1px solid var(--bsub); background:var(--surface); }
+
+  /* Modal */
+  .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:100; align-items:center; justify-content:center; }
+  .modal-bg.open { display:flex; }
+  .modal { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:28px; width:380px; max-width:90vw; }
+  .modal h2 { font-family:var(--serif); font-weight:400; font-size:17px; margin-bottom:18px; }
+  .modal label { display:block; font-size:11px; color:var(--dim); margin-bottom:5px; font-family:var(--mono); letter-spacing:1px; }
+  .modal input,.modal textarea { width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:var(--sans); font-size:14px; padding:10px 12px; border-radius:3px; margin-bottom:14px; outline:none; }
+  .modal input:focus,.modal textarea:focus { border-color:var(--accdim); }
+  .modal textarea { resize:vertical; min-height:56px; }
+  .modal-acts { display:flex; gap:8px; justify-content:flex-end; margin-top:6px; }
+  .modal-acts button { background:none; border:1px solid var(--border); color:var(--dim); cursor:pointer; padding:7px 18px; border-radius:3px; font-size:13px; transition:all .12s; }
+  .modal-acts button:hover { border-color:var(--accdim); color:var(--text); }
+  .modal-acts button.pri { background:var(--raised); border-color:var(--accdim); color:var(--accent); }
+  .hint { font-size:10px; color:var(--muted); margin-top:-10px; margin-bottom:14px; }
+
+  ::-webkit-scrollbar { width:4px; } ::-webkit-scrollbar-track { background:transparent; } ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
 </style>
 </head>
 <body>
-
 <div class="app">
-  <!-- Sidebar -->
-  <div class="sidebar">
-    <div class="sidebar-header">
-      <h1>照鉴</h1>
-      <div class="subtitle">cognitive mirror</div>
-    </div>
-    <div class="container-list" id="containerList"></div>
-    <button class="new-container-btn" onclick="openModal('container')">+ 新容器</button>
-    <div class="sidebar-footer">
-      <div class="user-info">
-        <span class="username-display" id="usernameDisplay"></span>
-        <button class="logout-btn" onclick="handleLogout()">退出</button>
-      </div>
-      <button class="api-key-btn" id="apiKeyBtn" onclick="openModal('apikey')">⚙ API Key</button>
+  <!-- Panel 1 -->
+  <div class="panel-containers">
+    <div class="panel-header"><h1>照鉴</h1><div class="sub">cognitive mirror</div></div>
+    <div class="list" id="cList"></div>
+    <button class="add-btn" onclick="openModal('container')">+ 新容器</button>
+    <div class="panel-foot">
+      <div class="row"><span class="uname" id="uname"></span><button class="sm-btn out" onclick="doLogout()">退出</button></div>
+      <button class="sm-btn cfg" id="keyBtn" onclick="openModal('apikey')">⚙ API Key</button>
     </div>
   </div>
-
-  <!-- Main -->
-  <div class="main" id="mainArea">
-    <div class="empty-state" id="emptyState">
-      <div class="mirror-char">鉴</div>
-      <p>选择或创建一个容器</p>
-    </div>
-
-    <div id="activeView" style="display:none; flex:1; display:none; flex-direction:column; overflow:hidden;">
-      <div class="feed" id="feed"></div>
-      <div class="input-area">
-        <div class="input-controls">
-          <div class="type-toggle">
-            <button class="active reflect" data-type="reflect" onclick="setEntryType('reflect')">审视</button>
-            <button data-type="vent" onclick="setEntryType('vent')">倾诉</button>
+  <!-- Panel 2 -->
+  <div class="panel-threads" id="p2" style="display:none">
+    <div class="head"><span class="cname" id="cnameLbl"></span></div>
+    <div class="list" id="tList"></div>
+    <button class="add-btn" id="newThreadBtn" onclick="startNewThread()">+ 新日记</button>
+  </div>
+  <!-- Panel 3 -->
+  <div class="panel-chat" id="p3">
+    <div class="empty" id="emptyMsg"><div class="big">鉴</div><p>选择或创建一个容器</p></div>
+    <!-- Chat view -->
+    <div id="chatView" style="display:none;flex:1;flex-direction:column;overflow:hidden;">
+      <div class="chat-feed" id="feed"></div>
+      <div class="chat-input" id="chatInput">
+        <div class="input-top" id="inputTopBar">
+          <div class="type-tog" id="typeTog">
+            <button class="on reflect" data-t="reflect" onclick="setType('reflect')">审视</button>
+            <button data-t="vent" onclick="setType('vent')">倾诉</button>
           </div>
-          <span class="char-count" id="charCount">0</span>
+          <span class="cc" id="cc">0</span>
         </div>
         <div class="input-row">
-          <textarea id="entryInput" placeholder="写点什么..." rows="2" oninput="updateCharCount()"></textarea>
-          <button class="send-btn" id="sendBtn" onclick="submitEntry()">记录</button>
+          <textarea id="inp" placeholder="写点什么..." rows="2" oninput="onInput()"></textarea>
+          <button class="send" id="sendBtn" onclick="doSend()">记录</button>
         </div>
       </div>
     </div>
@@ -632,381 +172,226 @@
 </div>
 
 <!-- Container Modal -->
-<div class="modal-overlay" id="containerModal">
-  <div class="modal">
-    <h2>新容器</h2>
-    <label>名称</label>
-    <input id="containerName" placeholder="例：和小羊的关系" autofocus>
-    <label>描述（可选）</label>
-    <textarea id="containerDesc" placeholder="这个容器探索什么心理域？"></textarea>
-    <div class="modal-actions">
-      <button onclick="closeModals()">取消</button>
-      <button class="primary" onclick="createContainer()">创建</button>
-    </div>
-  </div>
-</div>
-
+<div class="modal-bg" id="containerModal"><div class="modal">
+  <h2>新容器</h2>
+  <label>名称</label><input id="cNameIn" placeholder="例：工作压力">
+  <label>描述（可选）</label><textarea id="cDescIn" placeholder="这个容器探索什么心理域？"></textarea>
+  <div class="modal-acts"><button onclick="closeModals()">取消</button><button class="pri" onclick="doCreateContainer()">创建</button></div>
+</div></div>
 <!-- API Key Modal -->
-<div class="modal-overlay" id="apikeyModal">
-  <div class="modal">
-    <h2>DeepSeek API Key</h2>
-    <p style="font-size:13px;color:var(--text-dim);margin-bottom:16px;" id="keyStatus"></p>
-    <label>你自己的 API Key（可选）</label>
-    <input id="apiKeyInput" type="password" placeholder="sk-...">
-    <p style="font-size:11px;color:var(--text-muted);margin-top:-10px;margin-bottom:16px;">留空则使用共享额度</p>
-    <div class="modal-actions">
-      <button onclick="closeModals()">取消</button>
-      <button class="primary" onclick="saveApiKey()">保存</button>
-    </div>
-  </div>
-</div>
+<div class="modal-bg" id="apikeyModal"><div class="modal">
+  <h2>DeepSeek API Key</h2>
+  <p id="keyStatus" style="font-size:12px;color:var(--dim);margin-bottom:14px;"></p>
+  <label>你自己的 API Key（可选）</label><input id="keyIn" type="password" placeholder="sk-...">
+  <div class="hint">留空则使用共享额度</div>
+  <div class="modal-acts"><button onclick="closeModals()">取消</button><button class="pri" onclick="doSaveKey()">保存</button></div>
+</div></div>
 
 <script>
-// --- State ---
-let state = {
-  containers: [],
-  activeContainer: null,
-  entryType: 'reflect',
-  streaming: false,
-};
+let S = { containers:[], activeC:null, threads:[], activeT:null, type:'reflect', streaming:false, newThread:true };
 
-// --- Init ---
-async function init() {
-  const meResp = await fetch('/api/auth/me');
-  const me = await meResp.json();
-  if (!me.authenticated) { window.location.reload(); return; }
-  document.getElementById('usernameDisplay').textContent = me.username;
+// === Init ===
+async function init(){
+  const me = await(await fetch('/api/auth/me')).json();
+  if(!me.authenticated){ location.reload(); return; }
+  document.getElementById('uname').textContent = me.username;
+  const cfg = await(await fetch('/api/config')).json();
+  const kb = document.getElementById('keyBtn');
+  kb.textContent = cfg.has_own_key ? '⚙ 自有Key' : cfg.has_shared_key ? '⚙ 共享额度' : '⚙ 设置Key';
+  if(cfg.has_own_key||cfg.has_shared_key) kb.classList.add('cfg');
+  await loadContainers();
+}
 
-  const configResp = await fetch('/api/config');
-  const config = await configResp.json();
-  const btn = document.getElementById('apiKeyBtn');
-  if (config.has_own_key) {
-    btn.classList.add('configured');
-    btn.textContent = '⚙ 已配置自有Key';
-  } else if (config.has_shared_key) {
-    btn.classList.add('configured');
-    btn.textContent = '⚙ 使用共享额度';
-  }
-
-  const resp = await fetch('/api/containers');
-  const data = await resp.json();
-  state.containers = data.containers;
+// === Containers ===
+async function loadContainers(){
+  S.containers = (await(await fetch('/api/containers')).json()).containers;
   renderContainers();
 }
-
-async function handleLogout() {
-  await fetch('/api/auth/logout', { method: 'POST' });
-  window.location.reload();
-}
-
-// --- Containers ---
-function renderContainers() {
-  const list = document.getElementById('containerList');
-  list.innerHTML = state.containers.map(c => `
-    <div class="container-item ${state.activeContainer?.id === c.id ? 'active' : ''}"
-         onclick="selectContainer('${c.id}')">
+function renderContainers(){
+  document.getElementById('cList').innerHTML = S.containers.map(c=>`
+    <div class="list-item ${S.activeC?.id===c.id?'active':''}" onclick="selectContainer('${c.id}')">
       <div class="name">${esc(c.name)}</div>
-      <div class="meta">${c.entries.length} 条</div>
-      <button class="delete-btn" onclick="event.stopPropagation(); deleteContainer('${c.id}')" title="删除">×</button>
-    </div>
-  `).join('');
+      <div class="meta">${c.thread_count} 条</div>
+      <button class="del" onclick="event.stopPropagation();delContainer('${c.id}')" title="删除">×</button>
+    </div>`).join('');
 }
-
-function selectContainer(id) {
-  state.activeContainer = state.containers.find(c => c.id === id);
+async function selectContainer(id){
+  S.activeC = S.containers.find(c=>c.id===id);
+  S.activeT = null; S.newThread = false;
   renderContainers();
-  renderFeed();
-  document.getElementById('emptyState').style.display = 'none';
-  const av = document.getElementById('activeView');
-  av.style.display = 'flex';
+  document.getElementById('p2').style.display='flex';
+  document.getElementById('cnameLbl').textContent = S.activeC.name;
+  await loadThreads();
+  showEmpty('选择一条日记或创建新日记');
 }
-
-async function createContainer() {
-  const name = document.getElementById('containerName').value.trim();
-  if (!name) return;
-  const desc = document.getElementById('containerDesc').value.trim();
-
-  const resp = await fetch('/api/containers', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, description: desc }),
-  });
-  const container = await resp.json();
-  state.containers.push(container);
-  closeModals();
-  document.getElementById('containerName').value = '';
-  document.getElementById('containerDesc').value = '';
-  selectContainer(container.id);
+async function doCreateContainer(){
+  const n = document.getElementById('cNameIn').value.trim(); if(!n) return;
+  const d = document.getElementById('cDescIn').value.trim();
+  const c = await(await fetch('/api/containers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,description:d})})).json();
+  S.containers.unshift(c); closeModals(); document.getElementById('cNameIn').value=''; document.getElementById('cDescIn').value='';
+  selectContainer(c.id);
 }
-
-async function deleteContainer(id) {
-  if (!confirm('删除这个容器和所有日记？')) return;
-  await fetch(`/api/containers/${id}`, { method: 'DELETE' });
-  state.containers = state.containers.filter(c => c.id !== id);
-  if (state.activeContainer?.id === id) {
-    state.activeContainer = null;
-    document.getElementById('activeView').style.display = 'none';
-    document.getElementById('emptyState').style.display = 'flex';
-  }
+async function delContainer(id){
+  if(!confirm('删除此容器及所有日记？')) return;
+  await fetch(`/api/containers/${id}`,{method:'DELETE'});
+  S.containers = S.containers.filter(c=>c.id!==id);
+  if(S.activeC?.id===id){ S.activeC=null; S.activeT=null; document.getElementById('p2').style.display='none'; showEmpty('选择或创建一个容器'); }
   renderContainers();
 }
 
-// --- Entry Type ---
-function setEntryType(type) {
-  state.entryType = type;
-  document.querySelectorAll('.type-toggle button').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.type === type);
-    btn.classList.toggle(type, btn.dataset.type === type);
-  });
+// === Threads ===
+async function loadThreads(){
+  S.threads = (await(await fetch(`/api/containers/${S.activeC.id}/threads`)).json()).threads;
+  renderThreads();
 }
-
-function updateCharCount() {
-  const input = document.getElementById('entryInput');
-  document.getElementById('charCount').textContent = input.value.length;
-  // Auto-resize
-  input.style.height = 'auto';
-  input.style.height = Math.min(input.scrollHeight, 200) + 'px';
-}
-
-// --- Feed ---
-function renderFeed() {
-  const feed = document.getElementById('feed');
-  if (!state.activeContainer) return;
-
-  feed.innerHTML = state.activeContainer.entries.map((entry, i) => {
-    const time = new Date(entry.timestamp).toLocaleString('zh-CN', {
-      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-    });
-    const typeLabel = entry.type === 'vent' ? '倾诉' : '审视';
-    const typeClass = entry.type;
-
-    let observationHtml = '';
-    if (entry.observation) {
-      const isVent = entry.type === 'vent';
-      observationHtml = `
-        <div class="observation-block">
-          <div class="observation-text ${isVent ? 'vent-ack' : ''}">${esc(entry.observation)}</div>
-          ${entry.thinking ? `
-            <button class="thinking-toggle" onclick="toggleThinking(this)">› 思考过程</button>
-            <div class="thinking-content">${esc(entry.thinking)}</div>
-          ` : ''}
-        </div>
-      `;
-    }
-
-    return `
-      <div class="entry-block">
-        <div class="entry-header">
-          <span class="entry-type ${typeClass}">${typeLabel}</span>
-          <span class="entry-time">${time}</span>
-        </div>
-        <div class="entry-text">${esc(entry.text)}</div>
-        ${observationHtml}
-      </div>
-    `;
+function renderThreads(){
+  document.getElementById('tList').innerHTML = S.threads.map(t=>{
+    const d = new Date(t.updated).toLocaleDateString('zh-CN',{month:'short',day:'numeric'});
+    return `<div class="thread-item ${S.activeT?.id===t.id?'active':''}" onclick="selectThread('${t.id}')">
+      <div style="display:flex;align-items:center;gap:6px"><span class="ttype ${t.type}">${t.type==='vent'?'倾诉':'审视'}</span><span class="tmeta">${d}</span></div>
+      <div class="title">${esc(t.title)}</div>
+      <button class="del" onclick="event.stopPropagation();delThread('${t.id}')">×</button>
+    </div>`;
   }).join('');
-
-  // Add streaming block placeholder
-  feed.innerHTML += '<div id="streamingArea"></div>';
-  scrollToBottom();
+}
+async function selectThread(id){
+  S.activeT = S.threads.find(t=>t.id===id); S.newThread = false;
+  renderThreads();
+  const data = await(await fetch(`/api/threads/${id}`)).json();
+  S.activeT._msgs = data.messages;
+  showChat();
+  renderMessages();
+  // Show reply input
+  document.getElementById('typeTog').style.display='none';
+  document.getElementById('inp').placeholder = '回应...';
+  document.getElementById('sendBtn').textContent = '回应';
+}
+function startNewThread(){
+  S.activeT = null; S.newThread = true;
+  renderThreads();
+  showChat();
+  document.getElementById('feed').innerHTML = '';
+  // Show type toggle for new thread
+  document.getElementById('typeTog').style.display='flex';
+  document.getElementById('inp').placeholder = '写点什么...';
+  document.getElementById('sendBtn').textContent = '记录';
+  document.getElementById('inp').focus();
+}
+async function delThread(id){
+  if(!confirm('删除这条日记？')) return;
+  await fetch(`/api/threads/${id}`,{method:'DELETE'});
+  S.threads = S.threads.filter(t=>t.id!==id);
+  if(S.activeT?.id===id){ S.activeT=null; showEmpty('选择一条日记或创建新日记'); }
+  renderThreads(); loadContainers();
 }
 
-function toggleThinking(btn) {
-  const content = btn.nextElementSibling;
-  const isOpen = content.classList.toggle('open');
-  btn.textContent = isOpen ? '⌄ 思考过程' : '› 思考过程';
-}
-
-// --- Submit ---
-async function submitEntry() {
-  if (state.streaming) return;
-  const input = document.getElementById('entryInput');
-  const text = input.value.trim();
-  if (!text || !state.activeContainer) return;
-
-  const sendBtn = document.getElementById('sendBtn');
-  sendBtn.disabled = true;
-
-  const resp = await fetch('/api/entry', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      container_id: state.activeContainer.id,
-      text: text,
-      type: state.entryType,
-    }),
-  });
-
-  const data = await resp.json();
-
-  if (data.error) {
-    alert(data.error);
-    sendBtn.disabled = false;
-    return;
-  }
-
-  // Update local state
-  const containerIdx = state.containers.findIndex(c => c.id === state.activeContainer.id);
-  // Re-fetch to get updated entries
-  const containerResp = await fetch('/api/containers');
-  const containerData = await containerResp.json();
-  state.containers = containerData.containers;
-  state.activeContainer = state.containers.find(c => c.id === state.activeContainer.id);
-  renderContainers();
-
-  input.value = '';
-  updateCharCount();
-
-  if (!data.stream) {
-    // Vent mode - already saved
-    renderFeed();
-    sendBtn.disabled = false;
-    return;
-  }
-
-  // Reflect mode - stream observation
-  renderFeed();
-  state.streaming = true;
-  await streamObservation(state.activeContainer.id, data.entry_id);
-  state.streaming = false;
-  sendBtn.disabled = false;
-
-  // Re-fetch to get saved observation
-  const finalResp = await fetch('/api/containers');
-  const finalData = await finalResp.json();
-  state.containers = finalData.containers;
-  state.activeContainer = state.containers.find(c => c.id === state.activeContainer.id);
-  renderContainers();
-  renderFeed();
-}
-
-async function streamObservation(containerId, entryId) {
-  const area = document.getElementById('streamingArea');
-  area.innerHTML = `
-    <div class="streaming-block">
-      <div class="streaming-phase" id="streamPhase">思考中...</div>
-      <div class="streaming-thinking" id="streamThinking"></div>
-      <div class="streaming-content" id="streamContent" style="display:none"></div>
-    </div>
-  `;
-  scrollToBottom();
-
-  return new Promise((resolve) => {
-    const resp = fetch('/api/observe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ container_id: containerId, entry_id: entryId }),
-    });
-
-    resp.then(async (r) => {
-      const reader = r.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let hasContent = false;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const data = JSON.parse(line.slice(6));
-
-            if (data.type === 'thinking') {
-              const el = document.getElementById('streamThinking');
-              el.textContent += data.text;
-              el.scrollTop = el.scrollHeight;
-              scrollToBottom();
-            }
-
-            if (data.type === 'content') {
-              if (!hasContent) {
-                hasContent = true;
-                document.getElementById('streamPhase').textContent = '观察';
-                document.getElementById('streamThinking').style.display = 'none';
-                document.getElementById('streamContent').style.display = 'block';
-              }
-              document.getElementById('streamContent').textContent += data.text;
-              scrollToBottom();
-            }
-
-            if (data.type === 'error') {
-              area.innerHTML += `<div class="error-msg">${esc(data.text)}</div>`;
-              resolve();
-              return;
-            }
-
-            if (data.type === 'done') {
-              resolve();
-              return;
-            }
-          } catch (e) {}
-        }
-      }
-      resolve();
-    }).catch(() => resolve());
-  });
-}
-
-// --- Modals ---
-function openModal(type) {
-  closeModals();
-  document.getElementById(`${type}Modal`).classList.add('open');
-  const firstInput = document.querySelector(`#${type}Modal input`);
-  if (firstInput) setTimeout(() => firstInput.focus(), 100);
-}
-
-function closeModals() {
-  document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('open'));
-}
-
-async function saveApiKey() {
-  const key = document.getElementById('apiKeyInput').value.trim();
-  await fetch('/api/config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ api_key: key }),
-  });
-  const btn = document.getElementById('apiKeyBtn');
-  btn.classList.add('configured');
-  btn.textContent = key ? '⚙ 已配置自有Key' : '⚙ 使用共享额度';
-  document.getElementById('apiKeyInput').value = '';
-  closeModals();
-}
-
-// --- Utilities ---
-function esc(str) {
-  if (!str) return '';
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
-}
-
-function scrollToBottom() {
+// === Messages ===
+function renderMessages(){
+  if(!S.activeT?._msgs) return;
   const feed = document.getElementById('feed');
-  if (feed) feed.scrollTop = feed.scrollHeight;
+  feed.innerHTML = S.activeT._msgs.map(m=>{
+    const time = new Date(m.timestamp).toLocaleString('zh-CN',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+    if(m.role==='user') return `<div class="msg"><div class="msg-head"><span class="msg-role user">日记</span><span class="msg-time">${time}</span></div><div class="msg-body user-text">${esc(m.content)}</div></div>`;
+    const isVent = m.content === '已记录。';
+    return `<div class="msg"><div class="msg-head"><span class="msg-role assistant">照鉴</span><span class="msg-time">${time}</span></div>
+      <div class="msg-body ${isVent?'vent-text':'ai-text'}">${esc(m.content)}</div>
+      ${m.thinking?`<button class="think-toggle" onclick="togThink(this)">› 思考过程</button><div class="think-box">${esc(m.thinking)}</div>`:''}</div>`;
+  }).join('') + '<div id="streamArea"></div>';
+  scrollBot();
+}
+function togThink(b){ const box=b.nextElementSibling; const o=box.classList.toggle('open'); b.textContent=o?'⌄ 思考过程':'› 思考过程'; }
+
+// === Send ===
+async function doSend(){
+  if(S.streaming) return;
+  const inp = document.getElementById('inp');
+  const text = inp.value.trim(); if(!text) return;
+  const btn = document.getElementById('sendBtn'); btn.disabled=true;
+
+  if(S.newThread || !S.activeT){
+    // Create new thread
+    const res = await(await fetch(`/api/containers/${S.activeC.id}/threads`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,type:S.type})})).json();
+    inp.value=''; onInput();
+    await loadThreads(); loadContainers();
+    S.activeT = S.threads.find(t=>t.id===res.thread_id);
+    if(!res.stream){
+      // Vent
+      await selectThread(res.thread_id); btn.disabled=false; return;
+    }
+    // Load messages, then stream
+    const td = await(await fetch(`/api/threads/${res.thread_id}`)).json();
+    S.activeT._msgs = td.messages;
+    S.newThread = false; renderThreads(); showChat(); renderMessages();
+    document.getElementById('typeTog').style.display='none';
+    document.getElementById('inp').placeholder='回应...';
+    document.getElementById('sendBtn').textContent='回应';
+    S.streaming=true;
+    await stream(res.thread_id);
+    S.streaming=false; btn.disabled=false;
+    await reloadThread(res.thread_id);
+  } else {
+    // Reply to existing thread
+    await fetch(`/api/threads/${S.activeT.id}/reply`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+    inp.value=''; onInput();
+    // Reload and stream
+    const td = await(await fetch(`/api/threads/${S.activeT.id}`)).json();
+    S.activeT._msgs = td.messages; renderMessages();
+    S.streaming=true;
+    await stream(S.activeT.id);
+    S.streaming=false; btn.disabled=false;
+    await reloadThread(S.activeT.id);
+  }
 }
 
-// Keyboard shortcuts
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeModals();
-  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-    e.preventDefault();
-    submitEntry();
-  }
-});
+async function reloadThread(tid){
+  const td = await(await fetch(`/api/threads/${tid}`)).json();
+  S.activeT._msgs = td.messages;
+  renderMessages(); loadThreads();
+}
 
-// Close modal on overlay click
-document.querySelectorAll('.modal-overlay').forEach(overlay => {
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) closeModals();
+async function stream(tid){
+  const area = document.getElementById('streamArea');
+  area.innerHTML = `<div class="stream-block"><div class="stream-phase" id="sPhase">思考中...</div><div class="stream-think" id="sThink"></div><div class="stream-content" id="sCont" style="display:none"></div></div>`;
+  scrollBot();
+  return new Promise(resolve=>{
+    fetch(`/api/threads/${tid}/observe`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(async r=>{
+      const reader=r.body.getReader(); const dec=new TextDecoder(); let buf=''; let hasCont=false;
+      while(true){
+        const {done,value}=await reader.read(); if(done) break;
+        buf+=dec.decode(value,{stream:true}); const lines=buf.split('\n'); buf=lines.pop()||'';
+        for(const ln of lines){
+          if(!ln.startsWith('data: ')) continue;
+          try{
+            const d=JSON.parse(ln.slice(6));
+            if(d.type==='thinking'){ const e=document.getElementById('sThink'); e.textContent+=d.text; e.scrollTop=e.scrollHeight; scrollBot(); }
+            if(d.type==='content'){ if(!hasCont){ hasCont=true; document.getElementById('sPhase').textContent='观察'; document.getElementById('sThink').style.display='none'; document.getElementById('sCont').style.display='block'; } document.getElementById('sCont').textContent+=d.text; scrollBot(); }
+            if(d.type==='error'){ area.innerHTML+=`<div class="err-msg">${esc(d.text)}</div>`; resolve(); return; }
+            if(d.type==='done'){ resolve(); return; }
+          }catch(e){}
+        }
+      } resolve();
+    }).catch(()=>resolve());
   });
-});
+}
 
-// Init
+// === UI Helpers ===
+function showChat(){ document.getElementById('emptyMsg').style.display='none'; const cv=document.getElementById('chatView'); cv.style.display='flex'; }
+function showEmpty(msg){ document.getElementById('chatView').style.display='none'; const e=document.getElementById('emptyMsg'); e.style.display='flex'; e.querySelector('p').textContent=msg; }
+function setType(t){ S.type=t; document.querySelectorAll('.type-tog button').forEach(b=>{ b.classList.toggle('on',b.dataset.t===t); b.classList.toggle(t,b.dataset.t===t); }); }
+function onInput(){ const i=document.getElementById('inp'); document.getElementById('cc').textContent=i.value.length; i.style.height='auto'; i.style.height=Math.min(i.scrollHeight,180)+'px'; }
+function scrollBot(){ const f=document.getElementById('feed'); if(f) f.scrollTop=f.scrollHeight; }
+function esc(s){ return s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>'):''; }
+
+// === Modals ===
+function openModal(t){ closeModals(); document.getElementById(t+'Modal').classList.add('open'); const i=document.querySelector(`#${t}Modal input`); if(i) setTimeout(()=>i.focus(),80); }
+function closeModals(){ document.querySelectorAll('.modal-bg').forEach(m=>m.classList.remove('open')); }
+async function doSaveKey(){ const k=document.getElementById('keyIn').value.trim(); await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:k})}); const b=document.getElementById('keyBtn'); b.classList.add('cfg'); b.textContent=k?'⚙ 自有Key':'⚙ 共享额度'; document.getElementById('keyIn').value=''; closeModals(); }
+async function doLogout(){ await fetch('/api/auth/logout',{method:'POST'}); location.reload(); }
+
+// Keys
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModals(); if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();doSend();} });
+document.querySelectorAll('.modal-bg').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)closeModals();}));
+
 init();
 </script>
 </body>

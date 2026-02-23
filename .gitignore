@@ -1,7 +1,6 @@
 __pycache__/
 *.pyc
 zhaojian.db
-zhaojian_data.json
-.env
 *.db-wal
 *.db-shm
+.env

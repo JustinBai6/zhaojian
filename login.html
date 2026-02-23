@@ -6,169 +6,48 @@
 <title>照鉴</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400&family=IBM+Plex+Mono:wght@300;400&display=swap');
-  :root {
-    --bg: #08080a; --surface: #0f0f13; --surface-raised: #16161c;
-    --border: #1e1e26; --text: #c8c8d0; --text-dim: #5c5c6a;
-    --text-muted: #3a3a46; --accent: #8b7ec8; --accent-dim: #5a5080;
-    --danger: #c87070;
-    --serif: 'Noto Serif SC', 'Songti SC', serif;
-    --mono: 'IBM Plex Mono', 'SF Mono', monospace;
-    --sans: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    font-family: var(--sans); background: var(--bg); color: var(--text);
-    height: 100vh; display: flex; align-items: center; justify-content: center;
-  }
-  .auth-card {
-    width: 360px; max-width: 90vw;
-  }
-  .auth-card h1 {
-    font-family: var(--serif); font-weight: 300; font-size: 36px;
-    letter-spacing: 12px; color: var(--text-dim); text-align: center;
-    margin-bottom: 4px;
-  }
-  .auth-card .subtitle {
-    text-align: center; font-family: var(--mono); font-size: 11px;
-    color: var(--text-muted); letter-spacing: 3px; margin-bottom: 48px;
-  }
-  .tabs {
-    display: flex; gap: 0; margin-bottom: 24px;
-    border-bottom: 1px solid var(--border);
-  }
-  .tabs button {
-    flex: 1; background: none; border: none; border-bottom: 2px solid transparent;
-    color: var(--text-muted); cursor: pointer; padding: 10px 0;
-    font-family: var(--mono); font-size: 12px; letter-spacing: 2px;
-    transition: all 0.15s;
-  }
-  .tabs button.active {
-    color: var(--text); border-bottom-color: var(--accent-dim);
-  }
-  .field { margin-bottom: 16px; }
-  .field label {
-    display: block; font-family: var(--mono); font-size: 11px;
-    color: var(--text-dim); letter-spacing: 1px; margin-bottom: 6px;
-  }
-  .field input {
-    width: 100%; background: var(--surface); border: 1px solid var(--border);
-    color: var(--text); font-family: var(--sans); font-size: 14px;
-    padding: 12px 14px; border-radius: 4px; outline: none;
-    transition: border-color 0.15s;
-  }
-  .field input:focus { border-color: var(--accent-dim); }
-  .field input::placeholder { color: var(--text-muted); }
-  .submit-btn {
-    width: 100%; background: var(--surface-raised); border: 1px solid var(--border);
-    color: var(--text-dim); cursor: pointer; padding: 12px;
-    font-family: var(--mono); font-size: 13px; letter-spacing: 1px;
-    border-radius: 4px; margin-top: 8px; transition: all 0.15s;
-  }
-  .submit-btn:hover { border-color: var(--accent-dim); color: var(--accent); }
-  .error {
-    margin-top: 12px; padding: 10px 14px; font-size: 13px;
-    background: rgba(200,112,112,0.1); border: 1px solid rgba(200,112,112,0.2);
-    color: var(--danger); border-radius: 4px; display: none;
-  }
-  .error.show { display: block; }
+  :root { --bg:#08080a;--surface:#0f0f13;--raised:#16161c;--border:#1e1e26;--text:#c8c8d0;--dim:#5c5c6a;--muted:#3a3a46;--accent:#8b7ec8;--accdim:#5a5080;--danger:#c87070;--serif:'Noto Serif SC','Songti SC',serif;--mono:'IBM Plex Mono','SF Mono',monospace;--sans:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; }
+  * { margin:0;padding:0;box-sizing:border-box; }
+  body { font-family:var(--sans);background:var(--bg);color:var(--text);height:100vh;display:flex;align-items:center;justify-content:center; }
+  .card { width:340px;max-width:90vw; }
+  .card h1 { font-family:var(--serif);font-weight:300;font-size:36px;letter-spacing:12px;color:var(--dim);text-align:center;margin-bottom:4px; }
+  .card .sub { text-align:center;font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:3px;margin-bottom:44px; }
+  .tabs { display:flex;margin-bottom:22px;border-bottom:1px solid var(--border); }
+  .tabs button { flex:1;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;padding:9px 0;font-family:var(--mono);font-size:12px;letter-spacing:2px;transition:all .12s; }
+  .tabs button.on { color:var(--text);border-bottom-color:var(--accdim); }
+  .fld { margin-bottom:14px; }
+  .fld label { display:block;font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:1px;margin-bottom:5px; }
+  .fld input { width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:14px;padding:11px 13px;border-radius:4px;outline:none;transition:border-color .12s; }
+  .fld input:focus { border-color:var(--accdim); }
+  .fld input::placeholder { color:var(--muted); }
+  .sub-btn { width:100%;background:var(--raised);border:1px solid var(--border);color:var(--dim);cursor:pointer;padding:11px;font-family:var(--mono);font-size:13px;letter-spacing:1px;border-radius:4px;margin-top:6px;transition:all .12s; }
+  .sub-btn:hover { border-color:var(--accdim);color:var(--accent); }
+  .err { margin-top:10px;padding:9px 13px;font-size:13px;background:rgba(200,112,112,.1);border:1px solid rgba(200,112,112,.2);color:var(--danger);border-radius:4px;display:none; }
+  .err.show { display:block; }
 </style>
 </head>
 <body>
-<div class="auth-card">
-  <h1>照鉴</h1>
-  <div class="subtitle">cognitive mirror</div>
-
-  <div class="tabs">
-    <button class="active" onclick="switchTab('login')">登录</button>
-    <button onclick="switchTab('register')">注册</button>
-  </div>
-
-  <form id="loginForm" onsubmit="return handleLogin(event)">
-    <div class="field">
-      <label>用户名</label>
-      <input name="username" autocomplete="username" required>
-    </div>
-    <div class="field">
-      <label>密码</label>
-      <input name="password" type="password" autocomplete="current-password" required>
-    </div>
-    <button type="submit" class="submit-btn">进入</button>
+<div class="card">
+  <h1>照鉴</h1><div class="sub">cognitive mirror</div>
+  <div class="tabs"><button class="on" onclick="tab('login')">登录</button><button onclick="tab('register')">注册</button></div>
+  <form id="loginF" onsubmit="return doLogin(event)">
+    <div class="fld"><label>用户名</label><input name="username" required></div>
+    <div class="fld"><label>密码</label><input name="password" type="password" required></div>
+    <button type="submit" class="sub-btn">进入</button>
   </form>
-
-  <form id="registerForm" style="display:none" onsubmit="return handleRegister(event)">
-    <div class="field">
-      <label>邀请码</label>
-      <input name="invite_code" placeholder="向创建者索取" required>
-    </div>
-    <div class="field">
-      <label>用户名</label>
-      <input name="username" autocomplete="username" required>
-    </div>
-    <div class="field">
-      <label>密码</label>
-      <input name="password" type="password" autocomplete="new-password" required>
-    </div>
-    <button type="submit" class="submit-btn">注册</button>
+  <form id="regF" style="display:none" onsubmit="return doReg(event)">
+    <div class="fld"><label>邀请码</label><input name="invite_code" placeholder="向创建者索取" required></div>
+    <div class="fld"><label>用户名</label><input name="username" required></div>
+    <div class="fld"><label>密码</label><input name="password" type="password" required></div>
+    <button type="submit" class="sub-btn">注册</button>
   </form>
-
-  <div class="error" id="errorMsg"></div>
+  <div class="err" id="err"></div>
 </div>
-
 <script>
-function switchTab(tab) {
-  document.querySelectorAll('.tabs button').forEach((b, i) => {
-    b.classList.toggle('active', (tab === 'login' ? i === 0 : i === 1));
-  });
-  document.getElementById('loginForm').style.display = tab === 'login' ? 'block' : 'none';
-  document.getElementById('registerForm').style.display = tab === 'register' ? 'block' : 'none';
-  hideError();
-}
-
-function showError(msg) {
-  const el = document.getElementById('errorMsg');
-  el.textContent = msg;
-  el.classList.add('show');
-}
-function hideError() {
-  document.getElementById('errorMsg').classList.remove('show');
-}
-
-async function handleLogin(e) {
-  e.preventDefault();
-  hideError();
-  const form = new FormData(e.target);
-  const resp = await fetch('/api/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      username: form.get('username'),
-      password: form.get('password'),
-    }),
-  });
-  const data = await resp.json();
-  if (data.error) { showError(data.error); return false; }
-  window.location.reload();
-  return false;
-}
-
-async function handleRegister(e) {
-  e.preventDefault();
-  hideError();
-  const form = new FormData(e.target);
-  const resp = await fetch('/api/auth/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      invite_code: form.get('invite_code'),
-      username: form.get('username'),
-      password: form.get('password'),
-    }),
-  });
-  const data = await resp.json();
-  if (data.error) { showError(data.error); return false; }
-  window.location.reload();
-  return false;
-}
+function tab(t){ document.querySelectorAll('.tabs button').forEach((b,i)=>b.classList.toggle('on',t==='login'?i===0:i===1)); document.getElementById('loginF').style.display=t==='login'?'block':'none'; document.getElementById('regF').style.display=t==='register'?'block':'none'; document.getElementById('err').classList.remove('show'); }
+function showErr(m){ const e=document.getElementById('err');e.textContent=m;e.classList.add('show'); }
+async function doLogin(e){ e.preventDefault(); document.getElementById('err').classList.remove('show'); const f=new FormData(e.target); const r=await(await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:f.get('username'),password:f.get('password')})})).json(); if(r.error){showErr(r.error);return false;} location.reload();return false; }
+async function doReg(e){ e.preventDefault(); document.getElementById('err').classList.remove('show'); const f=new FormData(e.target); const r=await(await fetch('/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({invite_code:f.get('invite_code'),username:f.get('username'),password:f.get('password')})})).json(); if(r.error){showErr(r.error);return false;} location.reload();return false; }
 </script>
 </body>
 </html>
