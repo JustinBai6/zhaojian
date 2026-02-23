@@ -11,7 +11,8 @@ import requests as http_requests
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("ZHAOJIAN_SECRET", secrets.token_hex(32))
-DB_PATH = Path(__file__).parent / "zhaojian.db"
+db_dir = os.environ.get("DB_DIR", Path(__file__).parent)
+DB_PATH = Path(db_dir) / "zhaojian.db"
 INVITE_CODE = os.environ.get("ZHAOJIAN_INVITE", "zhaojian2026")
 SHARED_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 
