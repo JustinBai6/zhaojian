@@ -329,6 +329,21 @@ def admin_reset(username, new_pw):
     db.commit(); db.close()
     return jsonify({"status": "ok", "username": username})
 
+@app.route("/api/admin/debug")
+def admin_debug():
+    import os
+    db_dir = os.environ.get("DB_DIR", "NOT SET")
+    files_in_data = os.listdir("/data") if os.path.exists("/data") else "dir not found"
+    files_in_app = [f for f in os.listdir("/app") if "zhaojian" in f or f.endswith(".db")]
+    return jsonify({
+        "DB_DIR": db_dir,
+        "DB_PATH": str(DB_PATH),
+        "data_dir_contents": files_in_data,
+        "app_dir_db_files": files_in_app,
+        "db_file_exists": os.path.exists(str(DB_PATH)),
+        "db_size_bytes": os.path.getsize(str(DB_PATH)) if os.path.exists(str(DB_PATH)) else 0
+    })
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     print(f"\n  照鉴 · Zhaojian (Agent+Skills)")
