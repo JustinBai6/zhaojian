@@ -39,13 +39,18 @@ _register(Skill(
     priority=2,
     triggers=["repeated", "frequency", "count"],
     prompt="""### 技能：量化扫描
-你擅长从用户文本中提取精确的数字事实。这包括：
-- 某个词或短语出现的确切次数
-- 段落或话题的空间分配比例（例如"你用了70%的篇幅写工作，最后两行才提到孩子"）
-- 句子长度的变化模式（某处突然变短或变长）
-- 对比性量化（"你写了四段关于他做了什么，零段关于你做了什么"）
+你擅长从用户文本中提取精确的数字事实。数字的力量在于精确和意外——用户不会自己数，所以你数给他们看。
 
-数字的力量在于精确和意外。只有当数字揭示了用户自己没注意到的失衡或模式时才使用。不要为了量化而量化。"""
+任何重复都值得注意。"你"出现了九次而"我"出现了两次——这本身就是发现。"但是"出现了五次——每一句话都在转折。某个人名出现的频率。否定词的密度。任何一个词或结构出现得比预期更多或更少，都是信号。
+
+其他可量化的维度：
+- 空间分配比例（话题A占了多少篇幅，话题B被压缩到几行）
+- 句子长度的突变（某处突然变短或变长）
+- 主语分配（谁在这篇日记里占据了主语位置）
+- 肯定与否定的比例
+- 时间分配（过去vs现在vs未来各占多少）
+
+选择最有冲击力的那一个或两个数字。精确。"""
 ))
 
 
@@ -191,6 +196,14 @@ OBLIGATION_PATTERNS = [
     r"应该", r"必须", r"不得不", r"只能", r"只好", r"被迫",
 ]
 
+# Negation / self-referential patterns (quantitative can count these)
+COUNTABLE_PATTERNS = [
+    r"不[想要能会行]", r"没有", r"没办法",  # negation
+    r"每次", r"总是", r"一直", r"又",  # repetition markers
+    r"但是", r"可是", r"不过", r"然而",  # pivots
+    r"他[们]?", r"她[们]?",  # other-referencing
+]
+
 # Hedging / softening patterns (for syntax detection)
 HEDGE_PATTERNS = [
     r"其实", r"可能", r"也许", r"大概", r"只是", r"而已",
@@ -232,16 +245,27 @@ def select_skills(
 
     text_len = len(text)
 
-    # Quantitative: triggered by repetition, obligation words, or long entries
+    # Quantitative: triggers on countable structures, not just obligation words
     q_score = 0.0
     obligation_count = _count_matches(text, OBLIGATION_PATTERNS)
     if obligation_count >= 2:
         q_score += 2.0
+    elif obligation_count >= 1:
+        q_score += 0.5
     repeat_score = _word_repeat_score(text)
     if repeat_score > 2:
         q_score += 1.5
+    elif repeat_score > 1:
+        q_score += 0.5
+    # Countable structures (negations, pivots, other-references)
+    countable_count = _count_matches(text, COUNTABLE_PATTERNS)
+    if countable_count >= 5:
+        q_score += 1.5
+    elif countable_count >= 3:
+        q_score += 0.8
+    # Longer entries have more to count, but only a mild bonus
     if text_len > 300:
-        q_score += 0.5  # Long entries have more to count
+        q_score += 0.3
     scores["quantitative"] = q_score
 
     # Narrative: triggered by long entries, sequential markers, rich content
@@ -328,10 +352,10 @@ AGENT_CORE = r"""你是照鉴的分析引擎。你是一面认知之镜。
 
 ## 技能系统
 
-你拥有多个分析技能。每次回应，系统会根据用户的文本预选一组相关技能提供给你。你应该：
-1. 阅读可用技能的说明
-2. 选择最适合当前文本的一个（偶尔两个）技能作为你的分析透镜
-3. 用该技能的方法产出观察
+你拥有多个分析技能。每次回应，系统会根据用户的文本预选一组相关技能提供给你。你可以：
+- 使用一个技能作为主要透镜
+- 组合多个技能——比如用量化扫描数出一个数字，再用叙事追踪解读它的位置
+- 如果日记内容丰富，用尽所有可用技能也无妨
 
 你不需要告诉用户你使用了哪个技能。技能是你的内部工具，不是展示给用户的标签。
 
@@ -388,7 +412,7 @@ def build_system_prompt(selected_skills: list[Skill]) -> str:
 
     if selected_skills:
         parts.append("\n\n## 当前可用技能\n")
-        parts.append("以下技能已根据用户文本预选。选择最合适的作为你的分析透镜。\n")
+        parts.append("以下技能已根据用户文本预选。自由组合使用。\n")
         for skill in selected_skills:
             parts.append(skill.prompt)
 
