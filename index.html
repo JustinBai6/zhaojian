@@ -78,6 +78,12 @@
   .msg-body.user-text { color:var(--text); }
   .msg-body.ai-text { color:var(--obs); padding-left:14px; border-left:2px solid var(--accdim); }
   .msg-body.vent-text { color:var(--dim); font-style:italic; padding-left:14px; border-left:2px solid var(--vent); }
+
+  /* Skill tags */
+  .skill-tags { display:flex; gap:5px; flex-wrap:wrap; margin-top:6px; }
+  .skill-tag { font-family:var(--mono); font-size:9px; letter-spacing:1px; color:var(--muted); background:var(--bsub); border:1px solid var(--border); padding:1px 7px; border-radius:2px; cursor:default; transition:color .12s; }
+  .skill-tag:hover { color:var(--dim); }
+
   .think-toggle { background:none; border:none; color:var(--muted); cursor:pointer; font-family:var(--mono); font-size:10px; padding:3px 0; margin-top:6px; transition:color .12s; }
   .think-toggle:hover { color:var(--dim); }
   .think-box { display:none; margin-top:6px; padding:10px 14px; background:var(--surface); border-radius:3px; font-family:var(--mono); font-size:11px; line-height:1.8; color:var(--think); white-space:pre-wrap; max-height:350px; overflow-y:auto; }
@@ -86,6 +92,7 @@
   /* Streaming */
   .stream-block { margin-bottom:24px; max-width:640px; }
   .stream-phase { font-family:var(--mono); font-size:10px; color:var(--muted); margin-bottom:4px; letter-spacing:1px; }
+  .stream-skills { display:flex; gap:5px; margin-bottom:8px; flex-wrap:wrap; }
   .stream-think { font-family:var(--mono); font-size:11px; line-height:1.8; color:var(--think); white-space:pre-wrap; max-height:250px; overflow-y:auto; }
   .stream-content { font-family:var(--serif); font-size:15px; line-height:1.9; color:var(--obs); padding-left:14px; border-left:2px solid var(--accdim); }
   @keyframes pulse { 0%,100%{opacity:.3} 50%{opacity:.8} }
@@ -108,9 +115,6 @@
   .send:hover { border-color:var(--accdim); color:var(--accent); }
   .send:disabled { opacity:.3; cursor:not-allowed; }
   .err-msg { padding:10px 14px; background:rgba(200,112,112,.1); border:1px solid rgba(200,112,112,.2); color:var(--danger); font-size:12px; border-radius:3px; margin-top:6px; }
-
-  /* New thread input (shown when no thread selected) */
-  .new-thread-input { padding:16px 40px 24px; border-top:1px solid var(--bsub); background:var(--surface); }
 
   /* Modal */
   .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:100; align-items:center; justify-content:center; }
@@ -151,7 +155,6 @@
   <!-- Panel 3 -->
   <div class="panel-chat" id="p3">
     <div class="empty" id="emptyMsg"><div class="big">鉴</div><p>选择或创建一个容器</p></div>
-    <!-- Chat view -->
     <div id="chatView" style="display:none;flex:1;flex-direction:column;overflow:hidden;">
       <div class="chat-feed" id="feed"></div>
       <div class="chat-input" id="chatInput">
@@ -188,6 +191,17 @@
 </div></div>
 
 <script>
+// Skill display name map
+const SKILL_NAMES = {
+  quantitative: '量化扫描',
+  narrative: '叙事追踪',
+  syntax: '句法透视',
+  biological: '生物透镜',
+  cross_thread: '跨线索织网',
+  temporal: '时间棱镜',
+  distress: '急性协议'
+};
+
 let S = { containers:[], activeC:null, threads:[], activeT:null, type:'reflect', streaming:false, newThread:true };
 
 // === Init ===
@@ -261,7 +275,6 @@ async function selectThread(id){
   S.activeT._msgs = data.messages;
   showChat();
   renderMessages();
-  // Show reply input
   document.getElementById('typeTog').style.display='none';
   document.getElementById('inp').placeholder = '回应...';
   document.getElementById('sendBtn').textContent = '回应';
@@ -271,7 +284,6 @@ function startNewThread(){
   renderThreads();
   showChat();
   document.getElementById('feed').innerHTML = '';
-  // Show type toggle for new thread
   document.getElementById('typeTog').style.display='flex';
   document.getElementById('inp').placeholder = '写点什么...';
   document.getElementById('sendBtn').textContent = '记录';
@@ -286,6 +298,17 @@ async function delThread(id){
 }
 
 // === Messages ===
+function renderSkillTags(skillsJson) {
+  if (!skillsJson) return '';
+  try {
+    const skills = JSON.parse(skillsJson);
+    if (!Array.isArray(skills) || skills.length === 0) return '';
+    return `<div class="skill-tags">${skills.map(s =>
+      `<span class="skill-tag" title="${s}">${SKILL_NAMES[s] || s}</span>`
+    ).join('')}</div>`;
+  } catch(e) { return ''; }
+}
+
 function renderMessages(){
   if(!S.activeT?._msgs) return;
   const feed = document.getElementById('feed');
@@ -295,6 +318,7 @@ function renderMessages(){
     const isVent = m.content === '已记录。';
     return `<div class="msg"><div class="msg-head"><span class="msg-role assistant">照鉴</span><span class="msg-time">${time}</span></div>
       <div class="msg-body ${isVent?'vent-text':'ai-text'}">${esc(m.content)}</div>
+      ${renderSkillTags(m.skills_used)}
       ${m.thinking?`<button class="think-toggle" onclick="togThink(this)">› 思考过程</button><div class="think-box">${esc(m.thinking)}</div>`:''}</div>`;
   }).join('') + '<div id="streamArea"></div>';
   scrollBot();
@@ -309,16 +333,13 @@ async function doSend(){
   const btn = document.getElementById('sendBtn'); btn.disabled=true;
 
   if(S.newThread || !S.activeT){
-    // Create new thread
     const res = await(await fetch(`/api/containers/${S.activeC.id}/threads`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,type:S.type})})).json();
     inp.value=''; onInput();
     await loadThreads(); loadContainers();
     S.activeT = S.threads.find(t=>t.id===res.thread_id);
     if(!res.stream){
-      // Vent
       await selectThread(res.thread_id); btn.disabled=false; return;
     }
-    // Load messages, then stream
     const td = await(await fetch(`/api/threads/${res.thread_id}`)).json();
     S.activeT._msgs = td.messages;
     S.newThread = false; renderThreads(); showChat(); renderMessages();
@@ -330,10 +351,8 @@ async function doSend(){
     S.streaming=false; btn.disabled=false;
     await reloadThread(res.thread_id);
   } else {
-    // Reply to existing thread
     await fetch(`/api/threads/${S.activeT.id}/reply`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
     inp.value=''; onInput();
-    // Reload and stream
     const td = await(await fetch(`/api/threads/${S.activeT.id}`)).json();
     S.activeT._msgs = td.messages; renderMessages();
     S.streaming=true;
@@ -351,7 +370,12 @@ async function reloadThread(tid){
 
 async function stream(tid){
   const area = document.getElementById('streamArea');
-  area.innerHTML = `<div class="stream-block"><div class="stream-phase" id="sPhase">思考中...</div><div class="stream-think" id="sThink"></div><div class="stream-content" id="sCont" style="display:none"></div></div>`;
+  area.innerHTML = `<div class="stream-block">
+    <div class="stream-skills" id="sSkills"></div>
+    <div class="stream-phase" id="sPhase">思考中...</div>
+    <div class="stream-think" id="sThink"></div>
+    <div class="stream-content" id="sCont" style="display:none"></div>
+  </div>`;
   scrollBot();
   return new Promise(resolve=>{
     fetch(`/api/threads/${tid}/observe`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(async r=>{
@@ -363,6 +387,13 @@ async function stream(tid){
           if(!ln.startsWith('data: ')) continue;
           try{
             const d=JSON.parse(ln.slice(6));
+            if(d.type==='skills'){
+              // Show which skills were selected
+              const el = document.getElementById('sSkills');
+              el.innerHTML = d.skills.map(s =>
+                `<span class="skill-tag">${SKILL_NAMES[s] || s}</span>`
+              ).join('');
+            }
             if(d.type==='thinking'){ const e=document.getElementById('sThink'); e.textContent+=d.text; e.scrollTop=e.scrollHeight; scrollBot(); }
             if(d.type==='content'){ if(!hasCont){ hasCont=true; document.getElementById('sPhase').textContent='观察'; document.getElementById('sThink').style.display='none'; document.getElementById('sCont').style.display='block'; } document.getElementById('sCont').textContent+=d.text; scrollBot(); }
             if(d.type==='error'){ area.innerHTML+=`<div class="err-msg">${esc(d.text)}</div>`; resolve(); return; }
