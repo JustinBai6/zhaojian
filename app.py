@@ -51,6 +51,11 @@ def init_db():
         db.execute("ALTER TABLE messages ADD COLUMN skills_used TEXT")
     except sqlite3.OperationalError:
         pass  # Column already exists
+    # Migration: add patterns column to containers
+    try:
+        db.execute("ALTER TABLE containers ADD COLUMN patterns TEXT DEFAULT '{}'")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     db.commit(); db.close()
 
 init_db()
@@ -235,14 +240,8 @@ def observe(tid):
     container = db.execute("SELECT * FROM containers WHERE id=?", (t["container_id"],)).fetchone()
     msgs = db.execute("SELECT * FROM messages WHERE thread_id=? ORDER BY timestamp ASC", (tid,)).fetchall()
 
-    # Cross-thread context
-    others = db.execute(
-        "SELECT * FROM threads WHERE container_id=? AND user_id=? AND id!=? ORDER BY updated DESC LIMIT 10",
-        (t["container_id"], uid(), tid)).fetchall()
-    summaries = []
-    for o in others:
-        f = db.execute("SELECT content FROM messages WHERE thread_id=? AND role='user' ORDER BY timestamp ASC LIMIT 1", (o["id"],)).fetchone()
-        if f: summaries.append({"title": o["title"], "date": o["created"][:10], "preview": f["content"][:200]})
+    # Load accumulated container patterns
+    container_patterns = container["patterns"] if container["patterns"] and container["patterns"] != '{}' else None
 
     user = db.execute("SELECT api_key FROM users WHERE id=?", (uid(),)).fetchone()
     db.close()
@@ -253,20 +252,19 @@ def observe(tid):
         return Response(err(), mimetype="text/event-stream")
 
     # ── Skill Selection ──
-    # Gather all user text from this thread for analysis
     user_texts = [m["content"] for m in msgs if m["role"] == "user"]
     latest_text = user_texts[-1] if user_texts else ""
     all_user_text = "\n".join(user_texts)
 
     selected = select_skills(
         text=all_user_text,
-        has_cross_thread_context=len(summaries) > 0,
+        has_cross_thread_context=container_patterns is not None,
         max_skills=3,
     )
     skill_ids = [s.id for s in selected]
     system_prompt = build_system_prompt(selected)
 
-    api_msgs = _build_messages(system_prompt, container, msgs, summaries)
+    api_msgs = _build_messages(system_prompt, container, msgs, container_patterns)
 
     def generate():
         try:
@@ -287,11 +285,18 @@ def observe(tid):
                 if not dec.startswith("data: "): continue
                 pay = dec[6:]
                 if pay == "[DONE]":
+                    full_content = "".join(content)
+                    # Parse out patterns JSON if present
+                    observation, patterns_json = _split_patterns(full_content)
                     sdb = get_db()
                     sdb.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?)",
-                        (uuid.uuid4().hex[:8], tid, "assistant", "".join(content),
+                        (uuid.uuid4().hex[:8], tid, "assistant", observation,
                          "".join(think), json.dumps(skill_ids), datetime.now().isoformat()))
                     sdb.execute("UPDATE threads SET updated=? WHERE id=?", (datetime.now().isoformat(), tid))
+                    # Update container patterns if model produced them
+                    if patterns_json:
+                        sdb.execute("UPDATE containers SET patterns=? WHERE id=?",
+                            (patterns_json, t["container_id"]))
                     sdb.commit(); sdb.close()
                     yield f"data: {json.dumps({'type':'done'})}\n\n"; break
                 try:
@@ -309,14 +314,37 @@ def observe(tid):
     return Response(generate(), mimetype="text/event-stream")
 
 
-def _build_messages(system_prompt, container, thread_msgs, other_summaries):
+PATTERNS_MARKER = "---PATTERNS---"
+
+def _split_patterns(content: str) -> tuple[str, str | None]:
+    """Split model output into observation and patterns JSON.
+    Returns (observation_text, patterns_json_string_or_None)."""
+    if PATTERNS_MARKER not in content:
+        return content.strip(), None
+    parts = content.split(PATTERNS_MARKER, 1)
+    observation = parts[0].strip()
+    raw_json = parts[1].strip()
+    # Clean up common formatting issues
+    if raw_json.startswith("```"):
+        raw_json = raw_json.strip("`").strip()
+        if raw_json.startswith("json"):
+            raw_json = raw_json[4:].strip()
+    # Validate it's actual JSON
+    try:
+        json.loads(raw_json)
+        return observation, raw_json
+    except json.JSONDecodeError:
+        # Model produced garbage after marker — keep observation, discard patterns
+        return observation, None
+
+
+def _build_messages(system_prompt, container, thread_msgs, container_patterns):
     """Build the API message array with dynamic system prompt."""
     out = [{"role": "system", "content": system_prompt}]
     ctx = f"容器名称: {container['name']}\n"
     if container["description"]: ctx += f"容器描述: {container['description']}\n"
-    if other_summaries:
-        ctx += "\n=== 同容器中的其他日记线索 ===\n"
-        for s in other_summaries: ctx += f"- [{s['date']}] {s['title']}: {s['preview']}\n"
+    if container_patterns:
+        ctx += f"\n=== 容器累积模式档案 ===\n{container_patterns}\n"
     for i, m in enumerate(thread_msgs):
         c = m["content"]
         if i == 0 and m["role"] == "user": c = ctx + "\n=== 当前日记 ===\n" + c
