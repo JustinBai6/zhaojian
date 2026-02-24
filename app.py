@@ -104,6 +104,15 @@ def me():
     return jsonify({"authenticated": True, "username": session.get("username")})
 
 # === Config ===
+@app.route("/api/backup/<code>")
+def backup_db(code):
+    """Download the database file. Protected by invite code."""
+    if code != INVITE_CODE:
+        return jsonify({"error": "Invalid code"}), 403
+    if not DB_PATH.exists():
+        return jsonify({"error": "No database found"}), 404
+    return send_file(str(DB_PATH), as_attachment=True, download_name="zhaojian_backup.db")
+
 @app.route("/api/config", methods=["GET","POST"])
 @login_required
 def config():
