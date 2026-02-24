@@ -155,7 +155,8 @@ def list_containers():
 def create_container():
     d = request.json; cid = uuid.uuid4().hex[:8]; now = datetime.now().isoformat()
     db = get_db()
-    db.execute("INSERT INTO containers VALUES (?,?,?,?,?)", (cid, uid(), d["name"], d.get("description",""), now))
+    db.execute("INSERT INTO containers(id, user_id, name, description, created, patterns) VALUES (?,?,?,?,?,?)",
+        (cid, uid(), d["name"], d.get("description",""), now, "{}"))
     db.commit(); db.close()
     return jsonify({"id": cid, "name": d["name"], "description": d.get("description",""), "created": now, "thread_count": 0})
 
