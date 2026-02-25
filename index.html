@@ -68,7 +68,10 @@
 
   /* Messages */
   .chat-feed { flex:1; overflow-y:auto; padding:28px 40px; }
-  .msg { margin-bottom:24px; max-width:640px; }
+  .msg { margin-bottom:24px; max-width:640px; position:relative; }
+  .msg .msg-del { position:absolute; right:0; top:0; background:none; border:none; color:var(--muted); cursor:pointer; font-size:12px; opacity:0; transition:opacity .12s; padding:4px; font-family:var(--mono); }
+  .msg:hover .msg-del { opacity:1; }
+  .msg .msg-del:hover { color:var(--danger); }
   .msg-head { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
   .msg-role { font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:2px; color:var(--muted); }
   .msg-role.user { color:var(--dim); }
@@ -297,6 +300,20 @@ async function delThread(id){
   renderThreads(); loadContainers();
 }
 
+async function delMsg(mid){
+  if(!confirm('删除这条记录和对应的观察？')) return;
+  const res = await(await fetch(`/api/messages/${mid}`,{method:'DELETE'})).json();
+  if(res.thread_deleted){
+    // Thread was emptied — go back to thread list
+    S.threads = S.threads.filter(t=>t.id!==S.activeT?.id);
+    S.activeT=null; showEmpty('选择一条日记或创建新日记');
+    renderThreads(); loadContainers();
+  } else {
+    // Reload the thread
+    await reloadThread(S.activeT.id);
+  }
+}
+
 // === Messages ===
 function renderSkillTags(skillsJson) {
   if (!skillsJson) return '';
@@ -314,7 +331,7 @@ function renderMessages(){
   const feed = document.getElementById('feed');
   feed.innerHTML = S.activeT._msgs.map(m=>{
     const time = new Date(m.timestamp).toLocaleString('zh-CN',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-    if(m.role==='user') return `<div class="msg"><div class="msg-head"><span class="msg-role user">日记</span><span class="msg-time">${time}</span></div><div class="msg-body user-text">${esc(m.content)}</div></div>`;
+    if(m.role==='user') return `<div class="msg"><div class="msg-head"><span class="msg-role user">日记</span><span class="msg-time">${time}</span></div><div class="msg-body user-text">${esc(m.content)}</div><button class="msg-del" onclick="delMsg('${m.id}')" title="删除此条">×</button></div>`;
     const isVent = m.content === '已记录。';
     return `<div class="msg"><div class="msg-head"><span class="msg-role assistant">照鉴</span><span class="msg-time">${time}</span></div>
       <div class="msg-body ${isVent?'vent-text':'ai-text'}">${esc(m.content)}</div>

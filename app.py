@@ -220,6 +220,35 @@ def delete_thread(tid):
     db.commit(); db.close(); return jsonify({"status": "ok"})
 
 # === Reply ===
+@app.route("/api/messages/<mid>", methods=["DELETE"])
+@login_required
+def delete_message(mid):
+    """Delete a user message and its paired assistant response."""
+    db = get_db()
+    msg = db.execute("SELECT * FROM messages WHERE id=?", (mid,)).fetchone()
+    if not msg: db.close(); return jsonify({"error": "Not found"}), 404
+    # Verify thread ownership
+    t = db.execute("SELECT * FROM threads WHERE id=? AND user_id=?", (msg["thread_id"], uid())).fetchone()
+    if not t: db.close(); return jsonify({"error": "Not authorized"}), 403
+    # Only allow deleting user messages
+    if msg["role"] != "user": db.close(); return jsonify({"error": "只能删除自己的日记"}), 400
+    # Find the next assistant message (the paired response)
+    next_asst = db.execute(
+        "SELECT id FROM messages WHERE thread_id=? AND role='assistant' AND timestamp > ? ORDER BY timestamp ASC LIMIT 1",
+        (msg["thread_id"], msg["timestamp"])).fetchone()
+    # Delete both
+    db.execute("DELETE FROM messages WHERE id=?", (mid,))
+    if next_asst:
+        db.execute("DELETE FROM messages WHERE id=?", (next_asst["id"],))
+    # If thread is now empty, delete the thread too
+    remaining = db.execute("SELECT COUNT(*) as n FROM messages WHERE thread_id=?", (msg["thread_id"],)).fetchone()["n"]
+    deleted_thread = False
+    if remaining == 0:
+        db.execute("DELETE FROM threads WHERE id=?", (msg["thread_id"],))
+        deleted_thread = True
+    db.commit(); db.close()
+    return jsonify({"status": "ok", "thread_deleted": deleted_thread})
+
 @app.route("/api/threads/<tid>/reply", methods=["POST"])
 @login_required
 def reply(tid):
