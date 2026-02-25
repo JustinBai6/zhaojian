@@ -309,6 +309,10 @@ def observe(tid):
             yield f"data: {json.dumps({'type':'skills','skills': skill_ids})}\n\n"
 
             think, content = [], []
+            patterns_started = False
+            content_buffer = ""  # Buffer to detect marker before sending
+            MARKER = "---PATTERNS---"
+
             for line in resp.iter_lines():
                 if not line: continue
                 dec = line.decode("utf-8")
@@ -328,13 +332,34 @@ def observe(tid):
                         sdb.execute("UPDATE containers SET patterns=? WHERE id=?",
                             (patterns_json, t["container_id"]))
                     sdb.commit(); sdb.close()
+                    # Flush any remaining buffered content (before marker)
+                    if content_buffer and not patterns_started:
+                        yield f"data: {json.dumps({'type':'content','text':content_buffer})}\n\n"
                     yield f"data: {json.dumps({'type':'done'})}\n\n"; break
                 try:
                     ch = json.loads(pay); delta = ch.get("choices",[{}])[0].get("delta",{})
                     if rc := delta.get("reasoning_content"):
                         think.append(rc); yield f"data: {json.dumps({'type':'thinking','text':rc})}\n\n"
                     if ct := delta.get("content"):
-                        content.append(ct); yield f"data: {json.dumps({'type':'content','text':ct})}\n\n"
+                        content.append(ct)
+                        if patterns_started:
+                            # Already past marker — don't send to frontend
+                            continue
+                        content_buffer += ct
+                        # Check if marker has appeared
+                        if MARKER in content_buffer:
+                            # Send only the part before the marker
+                            before = content_buffer.split(MARKER)[0]
+                            if before.strip():
+                                yield f"data: {json.dumps({'type':'content','text':before.rstrip()})}\n\n"
+                            content_buffer = ""
+                            patterns_started = True
+                        elif len(content_buffer) > 200:
+                            # Flush buffer if it's getting long and no marker yet
+                            # Keep last 20 chars in case marker spans chunks
+                            flush = content_buffer[:-20]
+                            content_buffer = content_buffer[-20:]
+                            yield f"data: {json.dumps({'type':'content','text':flush})}\n\n"
                 except: pass
         except http_requests.exceptions.Timeout:
             yield f"data: {json.dumps({'type':'error','text':'Timeout'})}\n\n"

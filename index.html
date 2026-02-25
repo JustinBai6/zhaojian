@@ -414,14 +414,7 @@ async function stream(tid){
             if(d.type==='thinking'){ const e=document.getElementById('sThink'); e.textContent+=d.text; e.scrollTop=e.scrollHeight; scrollBot(); }
             if(d.type==='content'){
               if(!hasCont){ hasCont=true; document.getElementById('sPhase').textContent='观察'; document.getElementById('sThink').style.display='none'; document.getElementById('sCont').style.display='block'; }
-              // Stop displaying once we hit the patterns marker
-              const el = document.getElementById('sCont');
-              const cur = el.textContent + d.text;
-              if(cur.includes('---PATTERNS---')){
-                el.textContent = cur.split('---PATTERNS---')[0].trim();
-              } else {
-                el.textContent = cur;
-              }
+              document.getElementById('sCont').textContent+=d.text;
               scrollBot();
             }
             if(d.type==='error'){ area.innerHTML+=`<div class="err-msg">${esc(d.text)}</div>`; resolve(); return; }
