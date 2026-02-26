@@ -336,7 +336,7 @@ def observe(tid):
             resp = http_requests.post("https://api.deepseek.com/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                 json={"model": "deepseek-reasoner", "messages": api_msgs, "stream": True},
-                stream=True, timeout=120)
+                stream=True, timeout=240)
             if resp.status_code != 200:
                 yield f"data: {json.dumps({'type':'error','text':f'API {resp.status_code}: {resp.text[:300]}'})}\n\n"; return
 
