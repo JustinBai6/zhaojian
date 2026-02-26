@@ -1,6 +1,7 @@
 """
 照鉴 (Zhaojian) — Agent + Skills Architecture
 Container → Thread → Messages with dynamic skill selection.
+Per-entry Derived State extraction via combined output.
 """
 import os, json, uuid, sqlite3, hashlib, secrets
 from datetime import datetime
@@ -46,16 +47,17 @@ def init_db():
             timestamp TEXT NOT NULL
         );
     """)
-    # Migration: add skills_used column if it doesn't exist
-    try:
-        db.execute("ALTER TABLE messages ADD COLUMN skills_used TEXT")
-    except sqlite3.OperationalError:
-        pass  # Column already exists
-    # Migration: add patterns column to containers
-    try:
-        db.execute("ALTER TABLE containers ADD COLUMN patterns TEXT DEFAULT '{}'")
-    except sqlite3.OperationalError:
-        pass  # Column already exists
+    # Migrations
+    migrations = [
+        "ALTER TABLE messages ADD COLUMN skills_used TEXT",
+        "ALTER TABLE containers ADD COLUMN patterns TEXT DEFAULT '{}'",
+        "ALTER TABLE messages ADD COLUMN derived_state TEXT",
+    ]
+    for m in migrations:
+        try:
+            db.execute(m)
+        except sqlite3.OperationalError:
+            pass  # Column already exists
     db.commit(); db.close()
 
 init_db()
@@ -128,7 +130,7 @@ def config():
     user = db.execute("SELECT api_key FROM users WHERE id=?", (uid(),)).fetchone(); db.close()
     return jsonify({"has_own_key": bool(user["api_key"]) if user else False, "has_shared_key": bool(SHARED_API_KEY)})
 
-# === Skills Info (new endpoint) ===
+# === Skills Info ===
 @app.route("/api/skills", methods=["GET"])
 @login_required
 def list_skills():
@@ -137,6 +139,45 @@ def list_skills():
         {"id": s.id, "name": s.name, "label": s.label, "description": s.description}
         for s in SKILLS.values() if s.id != "distress"
     ]})
+
+# === Derived State Query ===
+@app.route("/api/containers/<cid>/states", methods=["GET"])
+@login_required
+def container_states(cid):
+    """Return all derived states for entries in a container, for trend visualization."""
+    db = get_db()
+    # Verify container ownership
+    c = db.execute("SELECT * FROM containers WHERE id=? AND user_id=?", (cid, uid())).fetchone()
+    if not c: db.close(); return jsonify({"error": "Not found"}), 404
+    # Get all threads in this container
+    threads = db.execute("SELECT id FROM threads WHERE container_id=? AND user_id=?", (cid, uid())).fetchall()
+    thread_ids = [t["id"] for t in threads]
+    if not thread_ids:
+        db.close(); return jsonify({"states": []})
+    # Get all user messages with derived states
+    placeholders = ",".join("?" * len(thread_ids))
+    rows = db.execute(f"""
+        SELECT m.id, m.thread_id, m.content, m.derived_state, m.timestamp
+        FROM messages m
+        WHERE m.thread_id IN ({placeholders}) AND m.role='user' AND m.derived_state IS NOT NULL
+        ORDER BY m.timestamp ASC
+    """, thread_ids).fetchall()
+    db.close()
+    states = []
+    for r in rows:
+        try:
+            ds = json.loads(r["derived_state"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        states.append({
+            "message_id": r["id"],
+            "thread_id": r["thread_id"],
+            "timestamp": r["timestamp"],
+            "preview": r["content"][:60],
+            **ds
+        })
+    return jsonify({"states": states})
+
 
 # === Containers ===
 @app.route("/api/containers", methods=["GET"])
@@ -191,9 +232,9 @@ def create_thread(cid):
     title = text[:40] + ("..." if len(text) > 40 else "")
     db = get_db()
     db.execute("INSERT INTO threads VALUES (?,?,?,?,?,?,?)", (tid, cid, uid(), title, ttype, now, now))
-    db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "user", text, None, None, now))
+    db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "user", text, None, None, now, None))
     if ttype == "vent":
-        db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "assistant", "已记录。", None, None, now))
+        db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "assistant", "已记录。", None, None, now, None))
         db.commit(); db.close(); return jsonify({"thread_id": tid, "stream": False})
     db.commit(); db.close()
     return jsonify({"thread_id": tid, "stream": True})
@@ -208,7 +249,7 @@ def get_thread(tid):
     db.close()
     return jsonify({
         "thread": dict(t),
-        "messages": [{**dict(m), "skills_used": m["skills_used"]} for m in msgs]
+        "messages": [{**dict(m), "skills_used": m["skills_used"], "derived_state": m["derived_state"]} for m in msgs]
     })
 
 @app.route("/api/threads/<tid>", methods=["DELETE"])
@@ -227,20 +268,15 @@ def delete_message(mid):
     db = get_db()
     msg = db.execute("SELECT * FROM messages WHERE id=?", (mid,)).fetchone()
     if not msg: db.close(); return jsonify({"error": "Not found"}), 404
-    # Verify thread ownership
     t = db.execute("SELECT * FROM threads WHERE id=? AND user_id=?", (msg["thread_id"], uid())).fetchone()
     if not t: db.close(); return jsonify({"error": "Not authorized"}), 403
-    # Only allow deleting user messages
     if msg["role"] != "user": db.close(); return jsonify({"error": "只能删除自己的日记"}), 400
-    # Find the next assistant message (the paired response)
     next_asst = db.execute(
         "SELECT id FROM messages WHERE thread_id=? AND role='assistant' AND timestamp > ? ORDER BY timestamp ASC LIMIT 1",
         (msg["thread_id"], msg["timestamp"])).fetchone()
-    # Delete both
     db.execute("DELETE FROM messages WHERE id=?", (mid,))
     if next_asst:
         db.execute("DELETE FROM messages WHERE id=?", (next_asst["id"],))
-    # If thread is now empty, delete the thread too
     remaining = db.execute("SELECT COUNT(*) as n FROM messages WHERE thread_id=?", (msg["thread_id"],)).fetchone()["n"]
     deleted_thread = False
     if remaining == 0:
@@ -255,7 +291,7 @@ def reply(tid):
     d = request.json; now = datetime.now().isoformat(); db = get_db()
     t = db.execute("SELECT * FROM threads WHERE id=? AND user_id=?", (tid, uid())).fetchone()
     if not t: db.close(); return jsonify({"error": "Not found"}), 404
-    db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "user", d["text"], None, None, now))
+    db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "user", d["text"], None, None, now, None))
     db.execute("UPDATE threads SET updated=? WHERE id=?", (now, tid))
     db.commit(); db.close()
     return jsonify({"stream": True})
@@ -270,7 +306,6 @@ def observe(tid):
     container = db.execute("SELECT * FROM containers WHERE id=?", (t["container_id"],)).fetchone()
     msgs = db.execute("SELECT * FROM messages WHERE thread_id=? ORDER BY timestamp ASC", (tid,)).fetchall()
 
-    # Load accumulated container patterns
     container_patterns = container["patterns"] if container["patterns"] and container["patterns"] != '{}' else None
 
     user = db.execute("SELECT api_key FROM users WHERE id=?", (uid(),)).fetchone()
@@ -305,13 +340,14 @@ def observe(tid):
             if resp.status_code != 200:
                 yield f"data: {json.dumps({'type':'error','text':f'API {resp.status_code}: {resp.text[:300]}'})}\n\n"; return
 
-            # Send skill selection metadata to frontend
             yield f"data: {json.dumps({'type':'skills','skills': skill_ids})}\n\n"
 
             think, content = [], []
             patterns_started = False
-            content_buffer = ""  # Buffer to detect marker before sending
-            MARKER = "---PATTERNS---"
+            derived_started = False
+            content_buffer = ""
+            PATTERNS_MK = "---PATTERNS---"
+            DERIVED_MK = "---DERIVED---"
 
             for line in resp.iter_lines():
                 if not line: continue
@@ -320,21 +356,39 @@ def observe(tid):
                 pay = dec[6:]
                 if pay == "[DONE]":
                     full_content = "".join(content)
-                    # Parse out patterns JSON if present
-                    observation, patterns_json = _split_patterns(full_content)
+                    observation, patterns_json, derived_json = _split_output(full_content)
+
+                    # Find the last user message to attach derived state to
+                    last_user_mid = None
+                    for m in reversed(msgs):
+                        if m["role"] == "user":
+                            last_user_mid = m["id"]
+                            break
+
                     sdb = get_db()
-                    sdb.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?)",
+                    sdb.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?)",
                         (uuid.uuid4().hex[:8], tid, "assistant", observation,
-                         "".join(think), json.dumps(skill_ids), datetime.now().isoformat()))
+                         "".join(think), json.dumps(skill_ids), datetime.now().isoformat(), None))
                     sdb.execute("UPDATE threads SET updated=? WHERE id=?", (datetime.now().isoformat(), tid))
-                    # Update container patterns if model produced them
                     if patterns_json:
                         sdb.execute("UPDATE containers SET patterns=? WHERE id=?",
                             (patterns_json, t["container_id"]))
+                    if derived_json and last_user_mid:
+                        sdb.execute("UPDATE messages SET derived_state=? WHERE id=?",
+                            (derived_json, last_user_mid))
                     sdb.commit(); sdb.close()
-                    # Flush any remaining buffered content (before marker)
-                    if content_buffer and not patterns_started:
+
+                    # Flush remaining buffered content
+                    if content_buffer and not patterns_started and not derived_started:
                         yield f"data: {json.dumps({'type':'content','text':content_buffer})}\n\n"
+
+                    # Send derived state to frontend for display
+                    if derived_json:
+                        try:
+                            yield f"data: {json.dumps({'type':'derived','data':json.loads(derived_json)})}\n\n"
+                        except json.JSONDecodeError:
+                            pass
+
                     yield f"data: {json.dumps({'type':'done'})}\n\n"; break
                 try:
                     ch = json.loads(pay); delta = ch.get("choices",[{}])[0].get("delta",{})
@@ -342,21 +396,24 @@ def observe(tid):
                         think.append(rc); yield f"data: {json.dumps({'type':'thinking','text':rc})}\n\n"
                     if ct := delta.get("content"):
                         content.append(ct)
-                        if patterns_started:
-                            # Already past marker — don't send to frontend
+                        if derived_started or patterns_started:
+                            # Past markers — don't send to frontend
+                            # But check if we transitioned from patterns to derived
+                            if patterns_started and not derived_started:
+                                content_buffer += ct
+                                if DERIVED_MK in content_buffer:
+                                    derived_started = True
+                                    content_buffer = ""
                             continue
                         content_buffer += ct
-                        # Check if marker has appeared
-                        if MARKER in content_buffer:
-                            # Send only the part before the marker
-                            before = content_buffer.split(MARKER)[0]
+                        # Check for patterns marker
+                        if PATTERNS_MK in content_buffer:
+                            before = content_buffer.split(PATTERNS_MK)[0]
                             if before.strip():
                                 yield f"data: {json.dumps({'type':'content','text':before.rstrip()})}\n\n"
                             content_buffer = ""
                             patterns_started = True
                         elif len(content_buffer) > 200:
-                            # Flush buffer if it's getting long and no marker yet
-                            # Keep last 20 chars in case marker spans chunks
                             flush = content_buffer[:-20]
                             content_buffer = content_buffer[-20:]
                             yield f"data: {json.dumps({'type':'content','text':flush})}\n\n"
@@ -369,28 +426,52 @@ def observe(tid):
     return Response(generate(), mimetype="text/event-stream")
 
 
-PATTERNS_MARKER = "---PATTERNS---"
+def _split_output(content: str) -> tuple[str, str | None, str | None]:
+    """Split model output into observation, patterns JSON, and derived state JSON.
+    Returns (observation_text, patterns_json_or_None, derived_json_or_None)."""
+    PATTERNS_MK = "---PATTERNS---"
+    DERIVED_MK = "---DERIVED---"
 
-def _split_patterns(content: str) -> tuple[str, str | None]:
-    """Split model output into observation and patterns JSON.
-    Returns (observation_text, patterns_json_string_or_None)."""
-    if PATTERNS_MARKER not in content:
-        return content.strip(), None
-    parts = content.split(PATTERNS_MARKER, 1)
-    observation = parts[0].strip()
-    raw_json = parts[1].strip()
-    # Clean up common formatting issues
-    if raw_json.startswith("```"):
-        raw_json = raw_json.strip("`").strip()
-        if raw_json.startswith("json"):
-            raw_json = raw_json[4:].strip()
-    # Validate it's actual JSON
+    observation = content.strip()
+    patterns_json = None
+    derived_json = None
+
+    # Split off patterns
+    if PATTERNS_MK in observation:
+        parts = observation.split(PATTERNS_MK, 1)
+        observation = parts[0].strip()
+        remainder = parts[1].strip()
+
+        # Split off derived from remainder
+        if DERIVED_MK in remainder:
+            pat_part, der_part = remainder.split(DERIVED_MK, 1)
+            patterns_json = _clean_json(pat_part.strip())
+            derived_json = _clean_json(der_part.strip())
+        else:
+            patterns_json = _clean_json(remainder)
+    elif DERIVED_MK in observation:
+        # Edge case: no patterns marker but derived exists
+        parts = observation.split(DERIVED_MK, 1)
+        observation = parts[0].strip()
+        derived_json = _clean_json(parts[1].strip())
+
+    return observation, patterns_json, derived_json
+
+
+def _clean_json(raw: str) -> str | None:
+    """Clean up common JSON formatting issues and validate."""
+    if not raw:
+        return None
+    # Strip markdown code fences
+    if raw.startswith("```"):
+        raw = raw.strip("`").strip()
+        if raw.startswith("json"):
+            raw = raw[4:].strip()
     try:
-        json.loads(raw_json)
-        return observation, raw_json
+        json.loads(raw)
+        return raw
     except json.JSONDecodeError:
-        # Model produced garbage after marker — keep observation, discard patterns
-        return observation, None
+        return None
 
 
 def _build_messages(system_prompt, container, thread_msgs, container_patterns):

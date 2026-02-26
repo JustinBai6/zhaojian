@@ -87,6 +87,13 @@
   .skill-tag { font-family:var(--mono); font-size:9px; letter-spacing:1px; color:var(--muted); background:var(--bsub); border:1px solid var(--border); padding:1px 7px; border-radius:2px; cursor:default; transition:color .12s; }
   .skill-tag:hover { color:var(--dim); }
 
+  /* Derived state display */
+  .derived-bar { display:flex; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap; }
+  .affect-dot { width:8px; height:8px; border-radius:50%; display:inline-block; flex-shrink:0; }
+  .affect-label { font-family:var(--mono); font-size:9px; color:var(--muted); letter-spacing:0.5px; }
+  .theme-tag { font-family:var(--mono); font-size:9px; letter-spacing:0.5px; color:var(--dim); background:transparent; border:1px solid var(--border); padding:1px 6px; border-radius:2px; cursor:default; }
+  .distortion-tag { font-family:var(--mono); font-size:9px; letter-spacing:0.5px; color:var(--danger); background:transparent; border:1px solid rgba(200,112,112,.2); padding:1px 6px; border-radius:2px; cursor:default; opacity:0.7; }
+
   .think-toggle { background:none; border:none; color:var(--muted); cursor:pointer; font-family:var(--mono); font-size:10px; padding:3px 0; margin-top:6px; transition:color .12s; }
   .think-toggle:hover { color:var(--dim); }
   .think-box { display:none; margin-top:6px; padding:10px 14px; background:var(--surface); border-radius:3px; font-family:var(--mono); font-size:11px; line-height:1.8; color:var(--think); white-space:pre-wrap; max-height:350px; overflow-y:auto; }
@@ -98,6 +105,7 @@
   .stream-skills { display:flex; gap:5px; margin-bottom:8px; flex-wrap:wrap; }
   .stream-think { font-family:var(--mono); font-size:11px; line-height:1.8; color:var(--think); white-space:pre-wrap; max-height:250px; overflow-y:auto; }
   .stream-content { font-family:var(--serif); font-size:15px; line-height:1.9; color:var(--obs); padding-left:14px; border-left:2px solid var(--accdim); }
+  .stream-derived { margin-top:8px; }
   @keyframes pulse { 0%,100%{opacity:.3} 50%{opacity:.8} }
   .cursor { display:inline-block; width:2px; height:13px; background:var(--accent); margin-left:2px; vertical-align:middle; animation:pulse 1.2s infinite; }
 
@@ -207,6 +215,44 @@ const SKILL_NAMES = {
 
 let S = { containers:[], activeC:null, threads:[], activeT:null, type:'reflect', streaming:false, newThread:true };
 
+// === Affect color helper ===
+function affectColor(valence, intensity) {
+  // Valence: -1 (cold blue) to +1 (warm amber). Intensity: 0 (dim) to 1 (vivid).
+  const hue = valence < 0
+    ? 210 + valence * 30   // negative: blue range (180-210)
+    : 40 + valence * 20;    // positive: amber range (40-60)
+  const sat = 20 + intensity * 60;  // 20% to 80%
+  const lit = 30 + intensity * 25;  // 30% to 55%
+  return `hsl(${hue}, ${sat}%, ${lit}%)`;
+}
+
+// === Derived state rendering ===
+function renderDerived(derivedJson) {
+  if (!derivedJson) return '';
+  try {
+    const ds = typeof derivedJson === 'string' ? JSON.parse(derivedJson) : derivedJson;
+    if (!ds || typeof ds !== 'object') return '';
+    let html = '<div class="derived-bar">';
+    // Affect dot
+    if (ds.affect_valence != null && ds.affect_intensity != null) {
+      const color = affectColor(ds.affect_valence, ds.affect_intensity);
+      const vLabel = ds.affect_valence > 0.3 ? '+' : ds.affect_valence < -0.3 ? '−' : '·';
+      html += `<span class="affect-dot" style="background:${color}" title="valence: ${ds.affect_valence.toFixed(2)}, intensity: ${ds.affect_intensity.toFixed(2)}"></span>`;
+      html += `<span class="affect-label">${vLabel}${Math.abs(ds.affect_valence).toFixed(1)} · i${ds.affect_intensity.toFixed(1)}</span>`;
+    }
+    // Theme tags
+    if (ds.theme_tags && ds.theme_tags.length > 0) {
+      html += ds.theme_tags.map(t => `<span class="theme-tag">${esc(t)}</span>`).join('');
+    }
+    // Distortion flags
+    if (ds.distortion_flags && ds.distortion_flags.length > 0) {
+      html += ds.distortion_flags.map(d => `<span class="distortion-tag">${esc(d)}</span>`).join('');
+    }
+    html += '</div>';
+    return html;
+  } catch(e) { return ''; }
+}
+
 // === Init ===
 async function init(){
   const me = await(await fetch('/api/auth/me')).json();
@@ -304,12 +350,10 @@ async function delMsg(mid){
   if(!confirm('删除这条记录和对应的观察？')) return;
   const res = await(await fetch(`/api/messages/${mid}`,{method:'DELETE'})).json();
   if(res.thread_deleted){
-    // Thread was emptied — go back to thread list
     S.threads = S.threads.filter(t=>t.id!==S.activeT?.id);
     S.activeT=null; showEmpty('选择一条日记或创建新日记');
     renderThreads(); loadContainers();
   } else {
-    // Reload the thread
     await reloadThread(S.activeT.id);
   }
 }
@@ -331,7 +375,12 @@ function renderMessages(){
   const feed = document.getElementById('feed');
   feed.innerHTML = S.activeT._msgs.map(m=>{
     const time = new Date(m.timestamp).toLocaleString('zh-CN',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-    if(m.role==='user') return `<div class="msg"><div class="msg-head"><span class="msg-role user">日记</span><span class="msg-time">${time}</span></div><div class="msg-body user-text">${esc(m.content)}</div><button class="msg-del" onclick="delMsg('${m.id}')" title="删除此条">×</button></div>`;
+    if(m.role==='user') return `<div class="msg">
+      <div class="msg-head"><span class="msg-role user">日记</span><span class="msg-time">${time}</span></div>
+      <div class="msg-body user-text">${esc(m.content)}</div>
+      ${renderDerived(m.derived_state)}
+      <button class="msg-del" onclick="delMsg('${m.id}')" title="删除此条">×</button>
+    </div>`;
     const isVent = m.content === '已记录。';
     return `<div class="msg"><div class="msg-head"><span class="msg-role assistant">照鉴</span><span class="msg-time">${time}</span></div>
       <div class="msg-body ${isVent?'vent-text':'ai-text'}">${esc(m.content)}</div>
@@ -392,6 +441,7 @@ async function stream(tid){
     <div class="stream-phase" id="sPhase">思考中...</div>
     <div class="stream-think" id="sThink"></div>
     <div class="stream-content" id="sCont" style="display:none"></div>
+    <div class="stream-derived" id="sDerived"></div>
   </div>`;
   scrollBot();
   return new Promise(resolve=>{
@@ -405,7 +455,6 @@ async function stream(tid){
           try{
             const d=JSON.parse(ln.slice(6));
             if(d.type==='skills'){
-              // Show which skills were selected
               const el = document.getElementById('sSkills');
               el.innerHTML = d.skills.map(s =>
                 `<span class="skill-tag">${SKILL_NAMES[s] || s}</span>`
@@ -416,6 +465,10 @@ async function stream(tid){
               if(!hasCont){ hasCont=true; document.getElementById('sPhase').textContent='观察'; document.getElementById('sThink').style.display='none'; document.getElementById('sCont').style.display='block'; }
               document.getElementById('sCont').textContent+=d.text;
               scrollBot();
+            }
+            if(d.type==='derived'){
+              // Show derived state inline during stream
+              document.getElementById('sDerived').innerHTML = renderDerived(d.data);
             }
             if(d.type==='error'){ area.innerHTML+=`<div class="err-msg">${esc(d.text)}</div>`; resolve(); return; }
             if(d.type==='done'){ resolve(); return; }
