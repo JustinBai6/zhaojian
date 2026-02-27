@@ -18,6 +18,7 @@ db_dir = os.environ.get("DB_DIR", Path(__file__).parent)
 DB_PATH = Path(db_dir) / "zhaojian.db"
 INVITE_CODE = os.environ.get("ZHAOJIAN_INVITE", "zhaojian2026")
 SHARED_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+CONTEXT_ID_MK = "---CONTEXT_ID---"
 
 def get_db():
     db = sqlite3.connect(str(DB_PATH))
@@ -300,6 +301,9 @@ def reply(tid):
 @app.route("/api/threads/<tid>/observe", methods=["POST"])
 @login_required
 def observe(tid):
+    d = request.json or {}
+    pinned_context_id = d.get("pinned_context_id")
+
     db = get_db()
     t = db.execute("SELECT * FROM threads WHERE id=? AND user_id=?", (tid, uid())).fetchone()
     if not t: db.close(); return jsonify({"error":"Not found"}), 404
@@ -309,6 +313,82 @@ def observe(tid):
     container_patterns = container["patterns"] if container["patterns"] and container["patterns"] != '{}' else None
 
     user = db.execute("SELECT api_key FROM users WHERE id=?", (uid(),)).fetchone()
+
+    # Fetch context data before closing DB
+    context_block = None
+    pinned_context_info = None
+    auto_context_threads = None
+
+    if pinned_context_id:
+        ctx_thread = db.execute(
+            "SELECT t.*, c.name as container_name FROM threads t "
+            "JOIN containers c ON c.id = t.container_id "
+            "WHERE t.id=? AND t.user_id=?",
+            (pinned_context_id, uid())).fetchone()
+        if ctx_thread:
+            ctx_msgs = db.execute(
+                "SELECT * FROM messages WHERE thread_id=? ORDER BY timestamp ASC",
+                (pinned_context_id,)).fetchall()
+            user_content = next((m["content"] for m in ctx_msgs if m["role"] == "user"), "")
+            ai_content = next((m["content"] for m in ctx_msgs if m["role"] == "assistant"), "")
+            date_str = ctx_thread["created"][:10]
+            context_block = (
+                f"\n=== 指定参照记录 ===\n"
+                f"[来源]: {ctx_thread['container_name']}  [日期]: {date_str}\n"
+                f"[日记]: {user_content}\n"
+                f"[照鉴]: {ai_content}\n"
+                f"=== 参照结束 ===\n"
+            )
+            pinned_context_info = {
+                "thread_id": pinned_context_id,
+                "title": ctx_thread["title"],
+                "preview": user_content[:80],
+                "auto": False,
+            }
+    else:
+        same_container = db.execute(
+            "SELECT t.id, t.title, t.container_id, c.name as container_name, t.created "
+            "FROM threads t JOIN containers c ON c.id = t.container_id "
+            "WHERE t.container_id=? AND t.id!=? AND t.user_id=? ORDER BY t.updated DESC LIMIT 10",
+            (t["container_id"], tid, uid())).fetchall()
+        other_threads = []
+        if len(same_container) < 10:
+            needed = 10 - len(same_container)
+            same_ids = [r["id"] for r in same_container] + [tid]
+            placeholders = ",".join("?" * len(same_ids))
+            other_threads = db.execute(
+                f"SELECT t.id, t.title, t.container_id, c.name as container_name, t.created "
+                f"FROM threads t JOIN containers c ON c.id = t.container_id "
+                f"WHERE t.container_id!=? AND t.user_id=? AND t.id NOT IN ({placeholders}) "
+                f"ORDER BY t.updated DESC LIMIT ?",
+                [t["container_id"], uid()] + same_ids + [needed]).fetchall()
+        all_ctx_threads = list(same_container) + list(other_threads)
+        summaries = []
+        for ct in all_ctx_threads[:10]:
+            first_user = db.execute(
+                "SELECT content FROM messages WHERE thread_id=? AND role='user' ORDER BY timestamp ASC LIMIT 1",
+                (ct["id"],)).fetchone()
+            preview = first_user["content"][:50] if first_user else ""
+            date_str = ct["created"][:10]
+            summaries.append({
+                "id": ct["id"],
+                "container_name": ct["container_name"],
+                "date": date_str,
+                "title": ct["title"],
+                "preview": preview,
+            })
+        if summaries:
+            lines = "\n".join(
+                f"[ID:{s['id']}] [{s['container_name']}] {s['date']}: {s['title']} — {s['preview']}"
+                for s in summaries
+            )
+            context_block = (
+                f"\n=== 可选参照记录 ===\n{lines}\n"
+                f"=== 选择说明 ===\n"
+                f"在输出末尾附加 {CONTEXT_ID_MK} 换行后写入最相关记录的ID（仅ID），若无相关则写 none。\n"
+            )
+            auto_context_threads = {s["id"]: s for s in summaries}
+
     db.close()
 
     api_key = (user["api_key"] if user and user["api_key"] else "") or SHARED_API_KEY
@@ -329,7 +409,7 @@ def observe(tid):
     skill_ids = [s.id for s in selected]
     system_prompt = build_system_prompt(selected)
 
-    api_msgs = _build_messages(system_prompt, container, msgs, container_patterns)
+    api_msgs = _build_messages(system_prompt, container, msgs, container_patterns, context_block)
 
     def generate():
         try:
@@ -341,6 +421,8 @@ def observe(tid):
                 yield f"data: {json.dumps({'type':'error','text':f'API {resp.status_code}: {resp.text[:300]}'})}\n\n"; return
 
             yield f"data: {json.dumps({'type':'skills','skills': skill_ids})}\n\n"
+            if pinned_context_info:
+                yield f"data: {json.dumps({'type':'context','data':pinned_context_info})}\n\n"
 
             think, content = [], []
             patterns_started = False
@@ -356,7 +438,7 @@ def observe(tid):
                 pay = dec[6:]
                 if pay == "[DONE]":
                     full_content = "".join(content)
-                    observation, patterns_json, derived_json = _split_output(full_content)
+                    observation, patterns_json, derived_json, ctx_id = _split_output(full_content)
 
                     # Find the last user message to attach derived state to
                     last_user_mid = None
@@ -389,6 +471,9 @@ def observe(tid):
                         except json.JSONDecodeError:
                             pass
 
+                    if auto_context_threads and ctx_id and ctx_id in auto_context_threads:
+                        ctx_s = auto_context_threads[ctx_id]
+                        yield f"data: {json.dumps({'type':'context','data':{'thread_id':ctx_id,'title':ctx_s['title'],'preview':ctx_s['preview'],'auto':True}})}\n\n"
                     yield f"data: {json.dumps({'type':'done'})}\n\n"; break
                 try:
                     ch = json.loads(pay); delta = ch.get("choices",[{}])[0].get("delta",{})
@@ -426,15 +511,26 @@ def observe(tid):
     return Response(generate(), mimetype="text/event-stream")
 
 
-def _split_output(content: str) -> tuple[str, str | None, str | None]:
-    """Split model output into observation, patterns JSON, and derived state JSON.
-    Returns (observation_text, patterns_json_or_None, derived_json_or_None)."""
+def _split_output(content: str) -> tuple[str, str | None, str | None, str | None]:
+    """Split model output into observation, patterns JSON, derived state JSON, and context_id.
+    Returns (observation_text, patterns_json_or_None, derived_json_or_None, context_id_or_None)."""
     PATTERNS_MK = "---PATTERNS---"
     DERIVED_MK = "---DERIVED---"
 
     observation = content.strip()
     patterns_json = None
     derived_json = None
+    context_id = None
+
+    def _extract_derived_and_context(der_part: str):
+        """Split der_part into (derived_json, context_id)."""
+        if CONTEXT_ID_MK in der_part:
+            der_str, ctx_str = der_part.split(CONTEXT_ID_MK, 1)
+            cid = ctx_str.strip()
+            if cid == "none":
+                cid = None
+            return _clean_json(der_str.strip()), cid
+        return _clean_json(der_part.strip()), None
 
     # Split off patterns
     if PATTERNS_MK in observation:
@@ -446,16 +542,16 @@ def _split_output(content: str) -> tuple[str, str | None, str | None]:
         if DERIVED_MK in remainder:
             pat_part, der_part = remainder.split(DERIVED_MK, 1)
             patterns_json = _clean_json(pat_part.strip())
-            derived_json = _clean_json(der_part.strip())
+            derived_json, context_id = _extract_derived_and_context(der_part)
         else:
             patterns_json = _clean_json(remainder)
     elif DERIVED_MK in observation:
         # Edge case: no patterns marker but derived exists
         parts = observation.split(DERIVED_MK, 1)
         observation = parts[0].strip()
-        derived_json = _clean_json(parts[1].strip())
+        derived_json, context_id = _extract_derived_and_context(parts[1])
 
-    return observation, patterns_json, derived_json
+    return observation, patterns_json, derived_json, context_id
 
 
 def _clean_json(raw: str) -> str | None:
@@ -474,13 +570,15 @@ def _clean_json(raw: str) -> str | None:
         return None
 
 
-def _build_messages(system_prompt, container, thread_msgs, container_patterns):
+def _build_messages(system_prompt, container, thread_msgs, container_patterns, context_block=None):
     """Build the API message array with dynamic system prompt."""
     out = [{"role": "system", "content": system_prompt}]
     ctx = f"容器名称: {container['name']}\n"
     if container["description"]: ctx += f"容器描述: {container['description']}\n"
     if container_patterns:
         ctx += f"\n=== 容器累积模式档案 ===\n{container_patterns}\n"
+    if context_block:
+        ctx += context_block
     for i, m in enumerate(thread_msgs):
         c = m["content"]
         if i == 0 and m["role"] == "user": c = ctx + "\n=== 当前日记 ===\n" + c

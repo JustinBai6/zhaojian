@@ -143,6 +143,27 @@
   .hint { font-size:10px; color:var(--muted); margin-top:-10px; margin-bottom:14px; }
 
   ::-webkit-scrollbar { width:4px; } ::-webkit-scrollbar-track { background:transparent; } ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+  /* Floating Context Window */
+  .context-win {
+    position: absolute; bottom: calc(100% + 8px); right: 40px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 4px; padding: 10px 14px; width: 260px;
+    font-size: 12px; z-index: 10; transition: opacity .15s;
+  }
+  .context-win.hidden { display: none; }
+  .ctx-badge { font-family: var(--mono); font-size: 9px; letter-spacing: 1px;
+    padding: 1px 6px; border-radius: 2px; }
+  .ctx-badge.auto { color: var(--accdim); background: transparent; border: 1px solid var(--accdim); }
+  .ctx-badge.pinned { color: var(--vent); background: transparent; border: 1px solid var(--vent); }
+  .ctx-title { color: var(--text); margin: 4px 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+  .ctx-preview { color: var(--muted); font-size: 11px; line-height: 1.5; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  /* Pin button on thread items */
+  .thread-item .pin-btn { position: absolute; right: 28px; top: 12px; background: none; border: none;
+    color: var(--muted); cursor: pointer; font-size: 11px; opacity: 0; transition: all .12s; padding: 0; }
+  .thread-item:hover .pin-btn { opacity: 1; }
+  .thread-item .pin-btn.pinned { opacity: 1; color: var(--vent); }
 </style>
 </head>
 <body>
@@ -168,17 +189,28 @@
     <div class="empty" id="emptyMsg"><div class="big">鉴</div><p>选择或创建一个容器</p></div>
     <div id="chatView" style="display:none;flex:1;flex-direction:column;overflow:hidden;">
       <div class="chat-feed" id="feed"></div>
-      <div class="chat-input" id="chatInput">
-        <div class="input-top" id="inputTopBar">
-          <div class="type-tog" id="typeTog">
-            <button class="on reflect" data-t="reflect" onclick="setType('reflect')">审视</button>
-            <button data-t="vent" onclick="setType('vent')">倾诉</button>
+      <div style="position:relative">
+        <div class="context-win hidden" id="contextWin">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <span style="font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:1px">参照</span>
+            <span class="ctx-badge" id="ctxBadge"></span>
+            <button onclick="clearContextPin()" style="margin-left:auto;background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0 2px;line-height:1" title="清除参照">×</button>
           </div>
-          <span class="cc" id="cc">0</span>
+          <div class="ctx-title" id="ctxTitle"></div>
+          <div class="ctx-preview" id="ctxPreview"></div>
         </div>
-        <div class="input-row">
-          <textarea id="inp" placeholder="写点什么..." rows="2" oninput="onInput()"></textarea>
-          <button class="send" id="sendBtn" onclick="doSend()">记录</button>
+        <div class="chat-input" id="chatInput">
+          <div class="input-top" id="inputTopBar">
+            <div class="type-tog" id="typeTog">
+              <button class="on reflect" data-t="reflect" onclick="setType('reflect')">审视</button>
+              <button data-t="vent" onclick="setType('vent')">倾诉</button>
+            </div>
+            <span class="cc" id="cc">0</span>
+          </div>
+          <div class="input-row">
+            <textarea id="inp" placeholder="写点什么..." rows="2" oninput="onInput()"></textarea>
+            <button class="send" id="sendBtn" onclick="doSend()">记录</button>
+          </div>
         </div>
       </div>
     </div>
@@ -213,7 +245,7 @@ const SKILL_NAMES = {
   distress: '急性协议'
 };
 
-let S = { containers:[], activeC:null, threads:[], activeT:null, type:'reflect', streaming:false, newThread:true };
+let S = { containers:[], activeC:null, threads:[], activeT:null, type:'reflect', streaming:false, newThread:true, pinnedContextId:null, contextThread:null };
 
 // === Affect color helper ===
 function affectColor(valence, intensity) {
@@ -310,9 +342,11 @@ async function loadThreads(){
 function renderThreads(){
   document.getElementById('tList').innerHTML = S.threads.map(t=>{
     const d = new Date(t.updated).toLocaleDateString('zh-CN',{month:'short',day:'numeric'});
+    const isPinned = S.pinnedContextId === t.id;
     return `<div class="thread-item ${S.activeT?.id===t.id?'active':''}" onclick="selectThread('${t.id}')">
       <div style="display:flex;align-items:center;gap:6px"><span class="ttype ${t.type}">${t.type==='vent'?'倾诉':'审视'}</span><span class="tmeta">${d}</span></div>
       <div class="title">${esc(t.title)}</div>
+      <button class="pin-btn ${isPinned?'pinned':''}" onclick="event.stopPropagation();togglePin('${t.id}')" title="${isPinned?'取消锁定':'设为参照'}">⊙</button>
       <button class="del" onclick="event.stopPropagation();delThread('${t.id}')">×</button>
     </div>`;
   }).join('');
@@ -391,6 +425,37 @@ function renderMessages(){
 }
 function togThink(b){ const box=b.nextElementSibling; const o=box.classList.toggle('open'); b.textContent=o?'⌄ 思考过程':'› 思考过程'; }
 
+// === Context Pin ===
+function togglePin(id) {
+  const thread = S.threads.find(t => t.id === id);
+  if (S.pinnedContextId === id) {
+    S.pinnedContextId = null;
+    S.contextThread = null;
+    document.getElementById('contextWin').classList.add('hidden');
+  } else {
+    S.pinnedContextId = id;
+    S.contextThread = thread;
+    showContextWindow({thread_id: id, title: thread.title, preview: thread.preview || '', auto: false});
+  }
+  renderThreads();
+}
+
+function clearContextPin() {
+  S.pinnedContextId = null;
+  S.contextThread = null;
+  document.getElementById('contextWin').classList.add('hidden');
+  renderThreads();
+}
+
+function showContextWindow(data) {
+  document.getElementById('ctxTitle').textContent = data.title || '';
+  document.getElementById('ctxPreview').textContent = data.preview || '';
+  const badge = document.getElementById('ctxBadge');
+  badge.textContent = data.auto ? 'AI选择' : '已锁定';
+  badge.className = 'ctx-badge ' + (data.auto ? 'auto' : 'pinned');
+  document.getElementById('contextWin').classList.remove('hidden');
+}
+
 // === Send ===
 async function doSend(){
   if(S.streaming) return;
@@ -445,7 +510,7 @@ async function stream(tid){
   </div>`;
   scrollBot();
   return new Promise(resolve=>{
-    fetch(`/api/threads/${tid}/observe`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(async r=>{
+    fetch(`/api/threads/${tid}/observe`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pinned_context_id:S.pinnedContextId||null})}).then(async r=>{
       const reader=r.body.getReader(); const dec=new TextDecoder(); let buf=''; let hasCont=false;
       while(true){
         const {done,value}=await reader.read(); if(done) break;
@@ -469,6 +534,9 @@ async function stream(tid){
             if(d.type==='derived'){
               // Show derived state inline during stream
               document.getElementById('sDerived').innerHTML = renderDerived(d.data);
+            }
+            if(d.type==='context'){
+              showContextWindow(d.data);
             }
             if(d.type==='error'){ area.innerHTML+=`<div class="err-msg">${esc(d.text)}</div>`; resolve(); return; }
             if(d.type==='done'){ resolve(); return; }
