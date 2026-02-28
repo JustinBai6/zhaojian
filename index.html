@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>照鉴</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500&family=IBM+Plex+Mono:wght@300;400&display=swap');
@@ -16,9 +16,17 @@
     --sans: -apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
   }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:var(--sans); background:var(--bg); color:var(--text); height:100vh; overflow:hidden; font-size:15px; line-height:1.7; }
-  .app { display:flex; height:100vh; }
+  body { font-family:var(--sans); background:var(--bg); color:var(--text); height:100vh; height:100dvh; overflow:hidden; font-size:15px; line-height:1.7; }
+  .app { display:flex; height:100vh; height:100dvh; }
 
+  /* === Mobile nav === */
+  .mobile-nav { display:none; position:fixed; top:0; left:0; right:0; z-index:50; background:var(--surface); border-bottom:1px solid var(--border); padding:0 12px; height:48px; align-items:center; gap:8px; }
+  .mobile-nav .back-btn { background:none; border:none; color:var(--dim); cursor:pointer; font-size:18px; padding:6px 8px; line-height:1; }
+  .mobile-nav .nav-title { font-family:var(--serif); font-size:15px; color:var(--text); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mobile-nav .nav-sub { font-family:var(--mono); font-size:10px; color:var(--muted); letter-spacing:1px; }
+  .mobile-nav .nav-action { background:none; border:none; color:var(--dim); cursor:pointer; font-family:var(--mono); font-size:11px; padding:6px 8px; }
+
+  /* === Panel: Containers === */
   .panel-containers { width:200px; min-width:200px; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; }
   .panel-header { padding:20px 16px 16px; border-bottom:1px solid var(--bsub); }
   .panel-header h1 { font-family:var(--serif); font-weight:300; font-size:22px; letter-spacing:8px; color:var(--dim); }
@@ -42,9 +50,13 @@
   .sm-btn.cfg { color:var(--vent); }
   .sm-btn.out:hover { color:var(--danger); }
 
+  /* === Panel: Threads === */
   .panel-threads { width:240px; min-width:240px; background:var(--bg); border-right:1px solid var(--border); display:flex; flex-direction:column; }
   .panel-threads .head { padding:14px 16px; border-bottom:1px solid var(--bsub); display:flex; align-items:center; justify-content:space-between; }
   .panel-threads .head .cname { font-size:14px; font-weight:500; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .panel-threads .head .dash-btn { background:none; border:1px solid var(--border); color:var(--muted); cursor:pointer; font-family:var(--mono); font-size:10px; padding:3px 9px; border-radius:3px; transition:all .12s; white-space:nowrap; }
+  .panel-threads .head .dash-btn:hover { border-color:var(--accdim); color:var(--dim); }
+  .panel-threads .head .dash-btn.active { border-color:var(--accdim); color:var(--accent); }
   .thread-item { padding:12px 16px; cursor:pointer; border-left:2px solid transparent; transition:all .12s; position:relative; }
   .thread-item:hover { background:var(--raised); }
   .thread-item.active { background:var(--raised); border-left-color:var(--accdim); }
@@ -60,11 +72,52 @@
   .thread-item:hover .pin-btn { opacity:0.8; color:var(--dim); }
   .thread-item .pin-btn.pinned { opacity:1; color:var(--vent); }
 
+  /* === Panel: Chat / Dashboard === */
   .panel-chat { flex:1; display:flex; flex-direction:column; overflow:hidden; }
   .empty { flex:1; display:flex; align-items:center; justify-content:center; flex-direction:column; color:var(--muted); }
   .empty .big { font-family:var(--serif); font-size:56px; font-weight:300; color:var(--border); margin-bottom:12px; }
   .empty p { font-size:12px; letter-spacing:1px; }
 
+  /* === Dashboard === */
+  .dashboard { flex:1; overflow-y:auto; padding:28px 32px; }
+  .dash-section { margin-bottom:32px; }
+  .dash-section-title { font-family:var(--mono); font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--muted); margin-bottom:12px; }
+  .dash-stats { display:flex; gap:20px; flex-wrap:wrap; margin-bottom:28px; }
+  .dash-stat { background:var(--surface); border:1px solid var(--border); border-radius:4px; padding:14px 18px; min-width:110px; flex:1; }
+  .dash-stat .val { font-family:var(--mono); font-size:22px; color:var(--text); font-weight:400; }
+  .dash-stat .lbl { font-family:var(--mono); font-size:10px; color:var(--muted); letter-spacing:1px; margin-top:2px; }
+
+  /* Affect chart */
+  .affect-chart { background:var(--surface); border:1px solid var(--border); border-radius:4px; padding:16px; overflow-x:auto; }
+  .affect-chart svg { display:block; width:100%; height:auto; }
+  .affect-legend { display:flex; gap:16px; margin-top:10px; }
+  .affect-legend span { font-family:var(--mono); font-size:10px; color:var(--muted); display:flex; align-items:center; gap:5px; }
+  .affect-legend .dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+
+  /* Bar charts */
+  .bar-chart { display:flex; flex-direction:column; gap:6px; }
+  .bar-row { display:flex; align-items:center; gap:10px; }
+  .bar-label { font-family:var(--mono); font-size:11px; color:var(--dim); min-width:120px; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bar-track { flex:1; height:16px; background:var(--surface); border-radius:2px; position:relative; overflow:hidden; }
+  .bar-fill { height:100%; border-radius:2px; transition:width .4s ease; min-width:2px; }
+  .bar-fill.theme { background:var(--accdim); }
+  .bar-fill.distortion { background:var(--danger); opacity:0.6; }
+  .bar-count { font-family:var(--mono); font-size:10px; color:var(--muted); min-width:24px; }
+
+  /* Salience */
+  .salience-list { display:flex; flex-wrap:wrap; gap:6px; }
+  .salience-tag { font-family:var(--serif); font-size:13px; color:var(--dim); background:var(--surface); border:1px solid var(--border); padding:4px 12px; border-radius:3px; }
+
+  /* Activity */
+  .activity-row { display:flex; gap:3px; flex-wrap:wrap; align-items:flex-end; }
+  .activity-day { width:12px; height:12px; border-radius:2px; background:var(--surface); border:1px solid var(--border); }
+
+  /* Empty dashboard state */
+  .dash-empty { text-align:center; padding:60px 20px; color:var(--muted); }
+  .dash-empty .icon { font-size:40px; color:var(--border); margin-bottom:12px; }
+  .dash-empty p { font-size:13px; line-height:1.8; max-width:320px; margin:0 auto; }
+
+  /* === Chat === */
   .chat-feed { flex:1; overflow-y:auto; padding:28px 40px; }
   .msg { margin-bottom:24px; max-width:640px; position:relative; }
   .msg .msg-del { position:absolute; right:0; top:0; background:none; border:none; color:var(--muted); cursor:pointer; font-size:12px; opacity:0; transition:opacity .12s; padding:4px; font-family:var(--mono); }
@@ -100,8 +153,8 @@
   .stream-think { font-family:var(--mono); font-size:11px; line-height:1.8; color:var(--think); white-space:pre-wrap; max-height:250px; overflow-y:auto; }
   .stream-content { font-family:var(--serif); font-size:15px; line-height:1.9; color:var(--obs); padding-left:14px; border-left:2px solid var(--accdim); }
   .stream-derived { margin-top:8px; }
-  @keyframes pulse { 0%,100%{opacity:.3} 50%{opacity:.8} }
 
+  /* === Chat input === */
   .chat-input { padding:16px 40px 24px; border-top:1px solid var(--bsub); background:var(--surface); }
   .input-top { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
   .type-tog { display:flex; background:var(--bg); border-radius:3px; border:1px solid var(--border); overflow:hidden; }
@@ -119,22 +172,7 @@
   .send:disabled { opacity:.3; cursor:not-allowed; }
   .err-msg { padding:10px 14px; background:rgba(200,112,112,.1); border:1px solid rgba(200,112,112,.2); color:var(--danger); font-size:12px; border-radius:3px; margin-top:6px; }
 
-  .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:100; align-items:center; justify-content:center; }
-  .modal-bg.open { display:flex; }
-  .modal { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:28px; width:380px; max-width:90vw; }
-  .modal h2 { font-family:var(--serif); font-weight:400; font-size:17px; margin-bottom:18px; }
-  .modal label { display:block; font-size:11px; color:var(--dim); margin-bottom:5px; font-family:var(--mono); letter-spacing:1px; }
-  .modal input,.modal textarea { width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:var(--sans); font-size:14px; padding:10px 12px; border-radius:3px; margin-bottom:14px; outline:none; }
-  .modal input:focus,.modal textarea:focus { border-color:var(--accdim); }
-  .modal textarea { resize:vertical; min-height:56px; }
-  .modal-acts { display:flex; gap:8px; justify-content:flex-end; margin-top:6px; }
-  .modal-acts button { background:none; border:1px solid var(--border); color:var(--dim); cursor:pointer; padding:7px 18px; border-radius:3px; font-size:13px; transition:all .12s; }
-  .modal-acts button:hover { border-color:var(--accdim); color:var(--text); }
-  .modal-acts button.pri { background:var(--raised); border-color:var(--accdim); color:var(--accent); }
-  .hint { font-size:10px; color:var(--muted); margin-top:-10px; margin-bottom:14px; }
-  ::-webkit-scrollbar { width:4px; } ::-webkit-scrollbar-track { background:transparent; } ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
-
-  /* Context window */
+  /* === Context window === */
   .context-win { position:absolute; bottom:calc(100% + 8px); right:40px; background:var(--surface); border:1px solid var(--border); border-radius:4px; padding:10px 14px; width:260px; font-size:12px; z-index:10; }
   .context-win.hidden { display:none; }
   .ctx-badge { font-family:var(--mono); font-size:9px; letter-spacing:1px; padding:1px 6px; border-radius:2px; }
@@ -145,7 +183,7 @@
   @keyframes ctx-in { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
   .context-win:not(.hidden) { animation:ctx-in .2s ease; }
 
-  /* Entry picker */
+  /* === Entry picker === */
   .pin-entries-btn { background:none; border:1px solid var(--border); color:var(--muted); cursor:pointer; font-family:var(--mono); font-size:10px; padding:4px 10px; border-radius:3px; transition:all .12s; white-space:nowrap; position:relative; }
   .pin-entries-btn:hover { border-color:var(--accdim); color:var(--dim); }
   .pin-entries-btn.has-pins { border-color:var(--vent); color:var(--vent); }
@@ -169,11 +207,65 @@
   .ep-item-preview { font-family:var(--serif); font-size:13px; color:var(--text); line-height:1.6; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .ep-item-meta { display:flex; gap:5px; margin-top:4px; flex-wrap:wrap; align-items:center; }
   .ep-empty { padding:24px 16px; text-align:center; color:var(--muted); font-size:12px; }
+
+  /* === Modals === */
+  .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:100; align-items:center; justify-content:center; }
+  .modal-bg.open { display:flex; }
+  .modal { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:28px; width:380px; max-width:90vw; }
+  .modal h2 { font-family:var(--serif); font-weight:400; font-size:17px; margin-bottom:18px; }
+  .modal label { display:block; font-size:11px; color:var(--dim); margin-bottom:5px; font-family:var(--mono); letter-spacing:1px; }
+  .modal input,.modal textarea { width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:var(--sans); font-size:14px; padding:10px 12px; border-radius:3px; margin-bottom:14px; outline:none; }
+  .modal input:focus,.modal textarea:focus { border-color:var(--accdim); }
+  .modal textarea { resize:vertical; min-height:56px; }
+  .modal-acts { display:flex; gap:8px; justify-content:flex-end; margin-top:6px; }
+  .modal-acts button { background:none; border:1px solid var(--border); color:var(--dim); cursor:pointer; padding:7px 18px; border-radius:3px; font-size:13px; transition:all .12s; }
+  .modal-acts button:hover { border-color:var(--accdim); color:var(--text); }
+  .modal-acts button.pri { background:var(--raised); border-color:var(--accdim); color:var(--accent); }
+  .hint { font-size:10px; color:var(--muted); margin-top:-10px; margin-bottom:14px; }
+  ::-webkit-scrollbar { width:4px; } ::-webkit-scrollbar-track { background:transparent; } ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+  /* ==================================
+     MOBILE RESPONSIVE
+     ================================== */
+  @media (max-width: 768px) {
+    .app { flex-direction:column; }
+    .mobile-nav { display:flex; }
+    .panel-containers, .panel-threads, .panel-chat {
+      position:fixed; top:48px; left:0; right:0; bottom:0;
+      width:100% !important; min-width:0 !important;
+      border-right:none !important;
+      transition: transform .2s ease, opacity .15s ease;
+    }
+    .panel-containers { z-index:30; }
+    .panel-threads { z-index:31; }
+    .panel-chat { z-index:32; }
+    .mob-hidden { transform:translateX(-100%); opacity:0; pointer-events:none; }
+    .mob-right { transform:translateX(100%); opacity:0; pointer-events:none; }
+    .mob-visible { transform:translateX(0); opacity:1; pointer-events:auto; }
+    .panel-header { padding:14px 16px 12px; }
+    .panel-header h1 { font-size:18px; letter-spacing:6px; }
+    .chat-feed { padding:20px 16px; }
+    .chat-input { padding:12px 16px 16px; }
+    .entry-picker { left:8px; right:8px; }
+    .context-win { right:16px; left:16px; width:auto; }
+    .dashboard { padding:20px 16px; }
+    .dash-stats { gap:10px; }
+    .dash-stat { min-width:80px; padding:10px 14px; }
+    .bar-label { min-width:80px; font-size:10px; }
+  }
 </style>
 </head>
 <body>
 <div class="app">
-  <div class="panel-containers">
+  <!-- Mobile nav bar -->
+  <div class="mobile-nav" id="mobileNav">
+    <button class="back-btn" id="mobBack" onclick="mobGoBack()" style="display:none">‹</button>
+    <span class="nav-title" id="mobTitle">照鉴</span>
+    <span class="nav-sub" id="mobSub"></span>
+    <button class="nav-action" id="mobAction" style="display:none"></button>
+  </div>
+
+  <div class="panel-containers" id="p1">
     <div class="panel-header"><h1>照鉴</h1><div class="sub">cognitive mirror</div></div>
     <div class="list" id="cList"></div>
     <button class="add-btn" onclick="openModal('container')">+ 新容器</button>
@@ -182,13 +274,25 @@
       <button class="sm-btn cfg" id="keyBtn" onclick="openModal('apikey')">⚙ API Key</button>
     </div>
   </div>
+
   <div class="panel-threads" id="p2" style="display:none">
-    <div class="head"><span class="cname" id="cnameLbl"></span></div>
+    <div class="head">
+      <span class="cname" id="cnameLbl"></span>
+      <button class="dash-btn" id="dashBtn" onclick="toggleDashboard()">趋势</button>
+    </div>
     <div class="list" id="tList"></div>
     <button class="add-btn" id="newThreadBtn" onclick="startNewThread()">+ 新日记</button>
   </div>
+
   <div class="panel-chat" id="p3">
     <div class="empty" id="emptyMsg"><div class="big">鉴</div><p>选择或创建一个容器</p></div>
+
+    <!-- Dashboard view -->
+    <div id="dashView" style="display:none;">
+      <div class="dashboard" id="dashContent"></div>
+    </div>
+
+    <!-- Chat view -->
     <div id="chatView" style="display:none;flex:1;flex-direction:column;overflow:hidden;">
       <div class="chat-feed" id="feed"></div>
       <div style="position:relative">
@@ -249,8 +353,75 @@ const SKILL_NAMES = { quantitative:'量化扫描', narrative:'叙事追踪', syn
 
 let S = { containers:[], activeC:null, threads:[], activeT:null, type:'reflect', streaming:false, newThread:true,
   pinnedContextId:null, contextThread:null,
-  pinnedEntryIds: new Set(), entryPickerData: [], entryPickerOpen: false };
+  pinnedEntryIds: new Set(), entryPickerData: [], entryPickerOpen: false,
+  showDashboard: false, dashData: null,
+  mobPanel: 'containers' // 'containers' | 'threads' | 'chat'
+};
 
+const isMobile = () => window.innerWidth <= 768;
+
+// === Mobile nav ===
+function mobUpdate() {
+  if (!isMobile()) return;
+  const back = document.getElementById('mobBack');
+  const title = document.getElementById('mobTitle');
+  const sub = document.getElementById('mobSub');
+  if (S.mobPanel === 'containers') {
+    back.style.display = 'none';
+    title.textContent = '照鉴';
+    sub.textContent = '';
+  } else if (S.mobPanel === 'threads') {
+    back.style.display = '';
+    title.textContent = S.activeC?.name || '';
+    sub.textContent = '';
+  } else if (S.mobPanel === 'chat') {
+    back.style.display = '';
+    title.textContent = S.showDashboard ? '趋势' : (S.activeT?.title || '新日记');
+    sub.textContent = S.activeC?.name || '';
+  }
+}
+
+function mobShow(panel) {
+  S.mobPanel = panel;
+  const p1 = document.getElementById('p1');
+  const p2 = document.getElementById('p2');
+  const p3 = document.getElementById('p3');
+  // Reset all
+  [p1, p2, p3].forEach(p => p.classList.remove('mob-hidden','mob-right','mob-visible'));
+  if (panel === 'containers') {
+    p1.classList.add('mob-visible');
+    p2.classList.add('mob-right');
+    p3.classList.add('mob-right');
+  } else if (panel === 'threads') {
+    p1.classList.add('mob-hidden');
+    p2.classList.add('mob-visible');
+    p3.classList.add('mob-right');
+  } else {
+    p1.classList.add('mob-hidden');
+    p2.classList.add('mob-hidden');
+    p3.classList.add('mob-visible');
+  }
+  mobUpdate();
+}
+
+function mobGoBack() {
+  if (S.mobPanel === 'chat') mobShow('threads');
+  else if (S.mobPanel === 'threads') mobShow('containers');
+}
+
+// Handle resize: desktop restores normal flow
+window.addEventListener('resize', () => {
+  const p1 = document.getElementById('p1');
+  const p2 = document.getElementById('p2');
+  const p3 = document.getElementById('p3');
+  if (!isMobile()) {
+    [p1, p2, p3].forEach(p => p.classList.remove('mob-hidden','mob-right','mob-visible'));
+  } else {
+    mobShow(S.mobPanel);
+  }
+});
+
+// === Helpers ===
 function affectColor(v,i) {
   const hue = v<0 ? 210+v*30 : 40+v*20;
   return `hsl(${hue}, ${20+i*60}%, ${30+i*25}%)`;
@@ -292,6 +463,7 @@ async function init(){
   kb.textContent=cfg.has_own_key?'⚙ 自有Key':cfg.has_shared_key?'⚙ 共享额度':'⚙ 设置Key';
   if(cfg.has_own_key||cfg.has_shared_key) kb.classList.add('cfg');
   await loadContainers();
+  if (isMobile()) mobShow('containers');
 }
 
 async function loadContainers(){ S.containers=(await(await fetch('/api/containers')).json()).containers; renderContainers(); }
@@ -305,10 +477,13 @@ function renderContainers(){
 async function selectContainer(id){
   S.activeC=S.containers.find(c=>c.id===id); S.activeT=null; S.newThread=false;
   S.pinnedEntryIds.clear(); S.pinnedContextId=null; S.contextThread=null;
+  S.showDashboard=false;
   renderContainers();
   document.getElementById('p2').style.display='flex';
   document.getElementById('cnameLbl').textContent=S.activeC.name;
+  document.getElementById('dashBtn').classList.remove('active');
   await loadThreads(); showEmpty('选择一条日记或创建新日记');
+  if (isMobile()) mobShow('threads');
 }
 async function doCreateContainer(){
   const n=document.getElementById('cNameIn').value.trim(); if(!n) return;
@@ -340,6 +515,7 @@ function renderThreads(){
 }
 async function selectThread(id){
   S.activeT=S.threads.find(t=>t.id===id); S.newThread=false;
+  S.showDashboard=false; document.getElementById('dashBtn').classList.remove('active');
   S.pinnedEntryIds.clear(); closeEntryPicker(); updatePinBtn();
   renderThreads();
   const data=await(await fetch(`/api/threads/${id}`)).json();
@@ -347,9 +523,11 @@ async function selectThread(id){
   document.getElementById('typeTog').style.display='none';
   document.getElementById('inp').placeholder='回应...';
   document.getElementById('sendBtn').textContent='回应';
+  if (isMobile()) mobShow('chat');
 }
 function startNewThread(){
   S.activeT=null; S.newThread=true;
+  S.showDashboard=false; document.getElementById('dashBtn').classList.remove('active');
   S.pinnedEntryIds.clear(); closeEntryPicker(); updatePinBtn();
   renderThreads(); showChat();
   document.getElementById('feed').innerHTML='';
@@ -357,6 +535,7 @@ function startNewThread(){
   document.getElementById('inp').placeholder='写点什么...';
   document.getElementById('sendBtn').textContent='记录';
   document.getElementById('inp').focus();
+  if (isMobile()) mobShow('chat');
 }
 async function delThread(id){
   if(!confirm('删除这条日记？')) return;
@@ -389,7 +568,163 @@ function renderMessages(){
 }
 function togThink(b){const box=b.nextElementSibling;const o=box.classList.toggle('open');b.textContent=o?'⌄ 思考过程':'› 思考过程';}
 
-// === Thread-level Context Pin (existing) ===
+// === Dashboard ===
+async function toggleDashboard(){
+  if(S.showDashboard){ S.showDashboard=false; document.getElementById('dashBtn').classList.remove('active'); showEmpty('选择一条日记或创建新日记'); return; }
+  S.showDashboard=true; S.activeT=null; S.newThread=false;
+  document.getElementById('dashBtn').classList.add('active');
+  renderThreads();
+  document.getElementById('emptyMsg').style.display='none';
+  document.getElementById('chatView').style.display='none';
+  document.getElementById('dashView').style.display='flex';
+  document.getElementById('dashContent').innerHTML='<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--mono);font-size:11px">加载中...</div>';
+  if(isMobile()) mobShow('chat');
+  try {
+    const res = await(await fetch(`/api/containers/${S.activeC.id}/trends`)).json();
+    if(!res.trends) {
+      document.getElementById('dashContent').innerHTML=`<div class="dash-empty"><div class="icon">◯</div><p>${res.reason==='no_derived_states'?'此容器的日记尚未产生分析数据。<br>写几篇审视类日记后，趋势会在这里显现。':'此容器还没有日记。'}</p></div>`;
+      return;
+    }
+    renderDashboard(res.trends);
+  } catch(e) {
+    document.getElementById('dashContent').innerHTML=`<div class="dash-empty"><div class="icon">×</div><p>加载失败</p></div>`;
+  }
+}
+
+function renderDashboard(t) {
+  const dc = document.getElementById('dashContent');
+  let h = '';
+
+  // Stats row
+  const vSign = t.avg_valence > 0.1 ? '+' : t.avg_valence < -0.1 ? '' : '';
+  h += `<div class="dash-stats">
+    <div class="dash-stat"><div class="val">${t.total_entries}</div><div class="lbl">总条目</div></div>
+    <div class="dash-stat"><div class="val">${vSign}${t.avg_valence.toFixed(2)}</div><div class="lbl">平均效价</div></div>
+    <div class="dash-stat"><div class="val">${t.avg_intensity.toFixed(2)}</div><div class="lbl">平均强度</div></div>
+    <div class="dash-stat"><div class="val">${t.theme_freq.length}</div><div class="lbl">主题数</div></div>
+  </div>`;
+
+  // Affect timeline
+  if (t.affect_timeline.length >= 2) {
+    h += `<div class="dash-section">
+      <div class="dash-section-title">情绪轨迹</div>
+      <div class="affect-chart">${buildAffectSVG(t.affect_timeline)}</div>
+      <div class="affect-legend">
+        <span><span class="dot" style="background:var(--accdim)"></span> 效价 (valence)</span>
+        <span><span class="dot" style="background:var(--vent)"></span> 强度 (intensity)</span>
+      </div>
+    </div>`;
+  } else if (t.affect_timeline.length === 1) {
+    const pt = t.affect_timeline[0];
+    h += `<div class="dash-section">
+      <div class="dash-section-title">情绪轨迹</div>
+      <div style="padding:20px;text-align:center;color:var(--muted);font-size:12px">
+        <span class="affect-dot" style="width:14px;height:14px;background:${affectColor(pt.valence, pt.intensity)}"></span>
+        <span style="margin-left:8px;font-family:var(--mono)">v:${pt.valence.toFixed(2)} i:${pt.intensity.toFixed(2)}</span>
+        <br><span style="font-size:11px;margin-top:4px;display:inline-block">需要更多条目以绘制轨迹</span>
+      </div>
+    </div>`;
+  }
+
+  // Theme frequency
+  if (t.theme_freq.length) {
+    const maxC = t.theme_freq[0].count;
+    h += `<div class="dash-section"><div class="dash-section-title">主题分布</div><div class="bar-chart">`;
+    for (const tf of t.theme_freq) {
+      const pct = Math.max((tf.count / maxC) * 100, 4);
+      h += `<div class="bar-row"><span class="bar-label">${esc(tf.tag)}</span><div class="bar-track"><div class="bar-fill theme" style="width:${pct}%"></div></div><span class="bar-count">${tf.count}</span></div>`;
+    }
+    h += '</div></div>';
+  }
+
+  // Distortion frequency
+  if (t.distortion_freq.length) {
+    const maxD = t.distortion_freq[0].count;
+    h += `<div class="dash-section"><div class="dash-section-title">认知扭曲频率</div><div class="bar-chart">`;
+    for (const df of t.distortion_freq) {
+      const pct = Math.max((df.count / maxD) * 100, 4);
+      h += `<div class="bar-row"><span class="bar-label">${esc(df.flag)}</span><div class="bar-track"><div class="bar-fill distortion" style="width:${pct}%"></div></div><span class="bar-count">${df.count}</span></div>`;
+    }
+    h += '</div></div>';
+  }
+
+  // Salience markers
+  if (t.salience_markers.length) {
+    h += `<div class="dash-section"><div class="dash-section-title">显著标记</div><div class="salience-list">`;
+    for (const m of t.salience_markers) h += `<span class="salience-tag">${esc(m)}</span>`;
+    h += '</div></div>';
+  }
+
+  // Activity
+  if (t.activity.length) {
+    h += `<div class="dash-section"><div class="dash-section-title">记录活动</div><div class="activity-row">`;
+    const maxA = Math.max(...t.activity.map(a=>a.count));
+    for (const a of t.activity) {
+      const intensity = a.count / maxA;
+      const bg = `hsl(260, ${20+intensity*40}%, ${12+intensity*20}%)`;
+      const border = `hsl(260, ${20+intensity*30}%, ${20+intensity*15}%)`;
+      h += `<div class="activity-day" style="background:${bg};border-color:${border}" title="${a.date}: ${a.count}条"></div>`;
+    }
+    h += '</div></div>';
+  }
+
+  dc.innerHTML = h;
+}
+
+function buildAffectSVG(timeline) {
+  const W = 560, H = 160, PAD = 30, PADT = 10, PADR = 10;
+  const n = timeline.length;
+  const chartW = W - PAD - PADR, chartH = H - PADT - PAD;
+
+  // X positions evenly spaced
+  const xs = timeline.map((_, i) => PAD + (i / Math.max(n-1, 1)) * chartW);
+
+  // Valence: -1 to 1 → top to bottom
+  const vy = (v) => PADT + (1 - (v + 1) / 2) * chartH;
+  // Intensity: 0 to 1 → bottom to top
+  const iy = (v) => PADT + (1 - v) * chartH;
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+
+  // Grid lines
+  const gridLines = [-1, -0.5, 0, 0.5, 1];
+  for (const gl of gridLines) {
+    const y = vy(gl);
+    svg += `<line x1="${PAD}" y1="${y}" x2="${W-PADR}" y2="${y}" stroke="#1e1e26" stroke-width="1"/>`;
+    svg += `<text x="${PAD-4}" y="${y+3}" fill="#3a3a46" font-size="9" font-family="IBM Plex Mono,monospace" text-anchor="end">${gl > 0 ? '+' : ''}${gl}</text>`;
+  }
+
+  // Zero line emphasis
+  svg += `<line x1="${PAD}" y1="${vy(0)}" x2="${W-PADR}" y2="${vy(0)}" stroke="#2a2a36" stroke-width="1" stroke-dasharray="4,3"/>`;
+
+  // Valence line
+  let vPath = `M ${xs[0]} ${vy(timeline[0].valence)}`;
+  for (let i = 1; i < n; i++) vPath += ` L ${xs[i]} ${vy(timeline[i].valence)}`;
+  svg += `<path d="${vPath}" fill="none" stroke="#5a5080" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+
+  // Intensity line
+  let iPath = `M ${xs[0]} ${iy(timeline[0].intensity)}`;
+  for (let i = 1; i < n; i++) iPath += ` L ${xs[i]} ${iy(timeline[i].intensity)}`;
+  svg += `<path d="${iPath}" fill="none" stroke="#6b8f71" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4,3"/>`;
+
+  // Dots
+  for (let i = 0; i < n; i++) {
+    const c = affectColor(timeline[i].valence, timeline[i].intensity);
+    svg += `<circle cx="${xs[i]}" cy="${vy(timeline[i].valence)}" r="4" fill="${c}" stroke="#08080a" stroke-width="1.5"/>`;
+  }
+
+  // Date labels (first, mid, last)
+  const labelIdxs = n <= 5 ? timeline.map((_,i)=>i) : [0, Math.floor(n/2), n-1];
+  for (const li of labelIdxs) {
+    const d = timeline[li].timestamp.slice(5,10);
+    svg += `<text x="${xs[li]}" y="${H-4}" fill="#3a3a46" font-size="9" font-family="IBM Plex Mono,monospace" text-anchor="middle">${d}</text>`;
+  }
+
+  svg += '</svg>';
+  return svg;
+}
+
+// === Thread-level Context Pin ===
 function togglePin(id){
   const thread=S.threads.find(t=>t.id===id);
   if(S.pinnedContextId===id){S.pinnedContextId=null;S.contextThread=null;document.getElementById('contextWin').classList.add('hidden');}
@@ -406,7 +741,7 @@ function showContextWindow(data){
   document.getElementById('contextWin').classList.remove('hidden');
 }
 
-// === Entry-level Context Pin (new) ===
+// === Entry-level Context Pin ===
 async function toggleEntryPicker(){
   if(S.entryPickerOpen){closeEntryPicker();return;}
   if(!S.activeC)return;
@@ -508,8 +843,20 @@ async function stream(tid){
   });
 }
 
-function showChat(){document.getElementById('emptyMsg').style.display='none';document.getElementById('chatView').style.display='flex';}
-function showEmpty(msg){document.getElementById('chatView').style.display='none';const e=document.getElementById('emptyMsg');e.style.display='flex';e.querySelector('p').textContent=msg;}
+// === View helpers ===
+function showChat(){
+  document.getElementById('emptyMsg').style.display='none';
+  document.getElementById('dashView').style.display='none';
+  document.getElementById('chatView').style.display='flex';
+  S.showDashboard=false;
+  document.getElementById('dashBtn').classList.remove('active');
+  mobUpdate();
+}
+function showEmpty(msg){
+  document.getElementById('chatView').style.display='none';
+  document.getElementById('dashView').style.display='none';
+  const e=document.getElementById('emptyMsg');e.style.display='flex';e.querySelector('p').textContent=msg;
+}
 function setType(t){S.type=t;document.querySelectorAll('.type-tog button').forEach(b=>{b.classList.toggle('on',b.dataset.t===t);b.classList.toggle(t,b.dataset.t===t);});}
 function onInput(){const i=document.getElementById('inp');document.getElementById('cc').textContent=i.value.length;i.style.height='auto';i.style.height=Math.min(i.scrollHeight,180)+'px';}
 function scrollBot(){const f=document.getElementById('feed');if(f)f.scrollTop=f.scrollHeight;}

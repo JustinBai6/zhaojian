@@ -160,6 +160,113 @@ def container_states(cid):
         states.append({"message_id": r["id"], "thread_id": r["thread_id"], "timestamp": r["timestamp"], "preview": r["content"][:60], **ds})
     return jsonify({"states": states})
 
+# === Container Trends (computed from derived states) ===
+@app.route("/api/containers/<cid>/trends", methods=["GET"])
+@login_required
+def container_trends(cid):
+    """Compute aggregate trends from derived states for dashboard display."""
+    db = get_db()
+    c = db.execute("SELECT * FROM containers WHERE id=? AND user_id=?", (cid, uid())).fetchone()
+    if not c: db.close(); return jsonify({"error": "Not found"}), 404
+    threads = db.execute("SELECT id FROM threads WHERE container_id=? AND user_id=?", (cid, uid())).fetchall()
+    thread_ids = [t["id"] for t in threads]
+    if not thread_ids: db.close(); return jsonify({"trends": None, "reason": "no_threads"})
+    placeholders = ",".join("?" * len(thread_ids))
+    rows = db.execute(f"""
+        SELECT m.id, m.thread_id, m.content, m.derived_state, m.timestamp
+        FROM messages m WHERE m.thread_id IN ({placeholders}) AND m.role='user'
+        ORDER BY m.timestamp ASC
+    """, thread_ids).fetchall()
+    db.close()
+
+    # Parse all derived states
+    entries = []
+    for r in rows:
+        ds = None
+        if r["derived_state"]:
+            try: ds = json.loads(r["derived_state"])
+            except (json.JSONDecodeError, TypeError): pass
+        entries.append({
+            "timestamp": r["timestamp"],
+            "has_state": ds is not None,
+            "derived": ds,
+            "word_count": len(r["content"]),
+        })
+
+    total_entries = len(entries)
+    entries_with_state = [e for e in entries if e["has_state"]]
+
+    if not entries_with_state:
+        return jsonify({"trends": None, "reason": "no_derived_states", "total_entries": total_entries})
+
+    # 1. Affect timeline (chronological series)
+    affect_timeline = []
+    for e in entries_with_state:
+        ds = e["derived"]
+        v = ds.get("affect_valence")
+        i = ds.get("affect_intensity")
+        if v is not None and i is not None:
+            affect_timeline.append({
+                "timestamp": e["timestamp"],
+                "valence": float(v) if isinstance(v, (int, float)) else 0,
+                "intensity": float(i) if isinstance(i, (int, float)) else 0,
+            })
+
+    # 2. Theme frequency
+    theme_counts = {}
+    for e in entries_with_state:
+        for tag in (e["derived"].get("theme_tags") or []):
+            tag = tag.strip().lower()
+            if tag: theme_counts[tag] = theme_counts.get(tag, 0) + 1
+    theme_freq = sorted(theme_counts.items(), key=lambda x: -x[1])[:15]
+
+    # 3. Distortion frequency
+    distortion_counts = {}
+    for e in entries_with_state:
+        for flag in (e["derived"].get("distortion_flags") or []):
+            flag = flag.strip().lower()
+            if flag: distortion_counts[flag] = distortion_counts.get(flag, 0) + 1
+    distortion_freq = sorted(distortion_counts.items(), key=lambda x: -x[1])[:10]
+
+    # 4. Salience markers (collect unique, recent first)
+    salience = []
+    seen = set()
+    for e in reversed(entries_with_state):
+        for m in (e["derived"].get("salience_markers") or []):
+            m_lower = m.strip().lower()
+            if m_lower and m_lower not in seen:
+                seen.add(m_lower)
+                salience.append(m.strip())
+            if len(salience) >= 12: break
+        if len(salience) >= 12: break
+
+    # 5. Aggregate stats
+    valences = [a["valence"] for a in affect_timeline]
+    intensities = [a["intensity"] for a in affect_timeline]
+    avg_valence = sum(valences) / len(valences) if valences else 0
+    avg_intensity = sum(intensities) / len(intensities) if intensities else 0
+
+    # 6. Entry activity (entries per day for the activity heatmap)
+    day_counts = {}
+    for e in entries:
+        day = e["timestamp"][:10]
+        day_counts[day] = day_counts.get(day, 0) + 1
+
+    return jsonify({
+        "trends": {
+            "total_entries": total_entries,
+            "entries_with_state": len(entries_with_state),
+            "affect_timeline": affect_timeline,
+            "avg_valence": round(avg_valence, 3),
+            "avg_intensity": round(avg_intensity, 3),
+            "theme_freq": [{"tag": t, "count": c} for t, c in theme_freq],
+            "distortion_freq": [{"flag": f, "count": c} for f, c in distortion_freq],
+            "salience_markers": salience,
+            "activity": [{"date": d, "count": c} for d, c in sorted(day_counts.items())],
+        }
+    })
+
+
 # === Container Entries Browser (for entry-level pinning) ===
 @app.route("/api/containers/<cid>/entries", methods=["GET"])
 @login_required
