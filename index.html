@@ -113,6 +113,52 @@
   .activity-row { display:flex; gap:3px; flex-wrap:wrap; align-items:flex-end; }
   .activity-day { width:12px; height:12px; border-radius:2px; background:var(--surface); border:1px solid var(--border); }
 
+  /* === Synthesis view === */
+  .synth-btn { background:none; border:none; color:var(--muted); cursor:pointer; font-size:10px; font-family:var(--mono); padding:2px 0; transition:color .12s; }
+  .synth-btn:hover { color:var(--accent); }
+
+  .synthesis { flex:1; overflow-y:auto; padding:28px 32px; }
+  .synth-section { margin-bottom:32px; }
+  .synth-section-title { font-family:var(--mono); font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--muted); margin-bottom:12px; }
+
+  .synth-cards { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:24px; }
+  .synth-card { background:var(--surface); border:1px solid var(--border); border-radius:4px; padding:14px 16px; min-width:160px; flex:1; position:relative; }
+  .synth-card .sc-name { font-family:var(--serif); font-size:14px; color:var(--text); margin-bottom:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .synth-card .sc-name::before { content:''; display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:8px; vertical-align:middle; }
+  .synth-card .sc-stats { display:flex; gap:12px; flex-wrap:wrap; }
+  .synth-card .sc-stat { font-family:var(--mono); font-size:10px; color:var(--muted); }
+  .synth-card .sc-stat .sv { color:var(--dim); font-size:13px; }
+  .synth-card .sc-themes { display:flex; gap:4px; flex-wrap:wrap; margin-top:8px; }
+  .synth-card .sc-themes span { font-family:var(--mono); font-size:9px; color:var(--dim); background:var(--bg); border:1px solid var(--border); padding:1px 6px; border-radius:2px; }
+
+  .synth-shared { background:var(--surface); border:1px solid var(--border); border-radius:4px; padding:16px; margin-bottom:16px; }
+  .synth-shared-title { font-family:var(--mono); font-size:10px; color:var(--muted); letter-spacing:1px; margin-bottom:10px; }
+  .synth-bar-row { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+  .synth-bar-label { font-family:var(--mono); font-size:11px; color:var(--dim); min-width:100px; text-align:right; }
+  .synth-bar-segments { flex:1; display:flex; height:16px; border-radius:2px; overflow:hidden; gap:1px; }
+  .synth-bar-seg { height:100%; min-width:2px; transition:width .4s ease; }
+  .synth-bar-containers { font-family:var(--mono); font-size:9px; color:var(--muted); min-width:80px; }
+
+  .synth-temporal { display:flex; gap:4px; flex-wrap:wrap; }
+  .synth-temporal-day { font-family:var(--mono); font-size:10px; color:var(--dim); background:var(--surface); border:1px solid var(--border); padding:3px 8px; border-radius:2px; }
+
+  .synth-analyze-area { background:var(--surface); border:1px solid var(--border); border-radius:4px; padding:20px; min-height:100px; }
+  .synth-gen-btn { background:var(--raised); border:1px solid var(--accdim); color:var(--accent); cursor:pointer; font-family:var(--mono); font-size:12px; padding:10px 24px; border-radius:3px; transition:all .12s; }
+  .synth-gen-btn:hover { background:var(--accdim); color:var(--text); }
+  .synth-gen-btn:disabled { opacity:.3; cursor:not-allowed; }
+
+  .synth-stream-think { font-family:var(--mono); font-size:11px; line-height:1.8; color:var(--think); white-space:pre-wrap; max-height:250px; overflow-y:auto; margin-bottom:12px; }
+  .synth-stream-content { font-family:var(--serif); font-size:15px; line-height:1.9; color:var(--obs); padding-left:14px; border-left:2px solid var(--accent); }
+  .synth-stream-phase { font-family:var(--mono); font-size:10px; color:var(--muted); margin-bottom:8px; letter-spacing:1px; }
+
+  /* Container hue palette */
+  .c-hue-0::before { background:hsl(260,50%,50%); }
+  .c-hue-1::before { background:hsl(160,40%,45%); }
+  .c-hue-2::before { background:hsl(30,50%,50%); }
+  .c-hue-3::before { background:hsl(340,45%,50%); }
+  .c-hue-4::before { background:hsl(200,50%,50%); }
+  .c-hue-5::before { background:hsl(80,40%,45%); }
+
   /* Empty dashboard state */
   .dash-empty { text-align:center; padding:60px 20px; color:var(--muted); }
   .dash-empty .icon { font-size:40px; color:var(--border); margin-bottom:12px; }
@@ -255,6 +301,10 @@
     .dash-stats { gap:10px; }
     .dash-stat { min-width:80px; padding:10px 14px; }
     .bar-label { min-width:80px; font-size:10px; }
+    .synthesis { padding:20px 16px; }
+    .synth-cards { gap:8px; }
+    .synth-card { min-width:140px; }
+    .synth-bar-label { min-width:70px; font-size:10px; }
   }
 </style>
 </head>
@@ -275,6 +325,7 @@
     <div class="panel-foot">
       <div class="row"><span class="uname" id="uname"></span><button class="sm-btn out" onclick="doLogout()">退出</button></div>
       <button class="sm-btn cfg" id="keyBtn" onclick="openModal('apikey')">⚙ API Key</button>
+      <button class="synth-btn" onclick="openSynthesis()">◈ 全局综合</button>
     </div>
   </div>
 
@@ -293,6 +344,11 @@
     <!-- Dashboard view -->
     <div id="dashView" style="display:none;">
       <div class="dashboard" id="dashContent"></div>
+    </div>
+
+    <!-- Synthesis view -->
+    <div id="synthView" style="display:none;">
+      <div class="synthesis" id="synthContent"></div>
     </div>
 
     <!-- Chat view -->
@@ -353,12 +409,13 @@
 </div></div>
 
 <script>
-const SKILL_NAMES = { quantitative:'量化扫描', narrative:'叙事追踪', syntax:'句法透视', biological:'生物透镜', cross_thread:'跨线索织网', temporal:'时间棱镜', distress:'急性协议', query:'数据查询' };
+const SKILL_NAMES = { quantitative:'量化扫描', narrative:'叙事追踪', syntax:'句法透视', biological:'生物透镜', cross_thread:'跨线索织网', cross_container:'容器间对比', temporal:'时间棱镜', distress:'急性协议', query:'数据查询' };
 
 let S = { containers:[], activeC:null, threads:[], activeT:null, type:'reflect', streaming:false, newThread:true,
   pinnedContextId:null, contextThread:null,
   pinnedEntryIds: new Set(), entryPickerData: [], entryPickerOpen: false,
   showDashboard: false, dashData: null,
+  showSynthesis: false, synthData: null,
   mobPanel: 'containers' // 'containers' | 'threads' | 'chat'
 };
 
@@ -380,7 +437,7 @@ function mobUpdate() {
     sub.textContent = '';
   } else if (S.mobPanel === 'chat') {
     back.style.display = '';
-    title.textContent = S.showDashboard ? '趋势' : (S.activeT?.title || '新日记');
+    title.textContent = S.showSynthesis ? '全局综合' : S.showDashboard ? '趋势' : (S.activeT?.title || '新日记');
     sub.textContent = S.activeC?.name || '';
   }
 }
@@ -481,11 +538,12 @@ function renderContainers(){
 async function selectContainer(id){
   S.activeC=S.containers.find(c=>c.id===id); S.activeT=null; S.newThread=false;
   S.pinnedEntryIds.clear(); S.pinnedContextId=null; S.contextThread=null;
-  S.showDashboard=false;
+  S.showDashboard=false; S.showSynthesis=false;
   renderContainers();
   document.getElementById('p2').style.display='flex';
   document.getElementById('cnameLbl').textContent=S.activeC.name;
   document.getElementById('dashBtn').classList.remove('active');
+  document.getElementById('synthView').style.display='none';
   await loadThreads(); showEmpty('选择一条日记或创建新日记');
   if (isMobile()) mobShow('threads');
 }
@@ -589,7 +647,9 @@ async function toggleDashboard(){
   renderThreads();
   document.getElementById('emptyMsg').style.display='none';
   document.getElementById('chatView').style.display='none';
+  document.getElementById('synthView').style.display='none';
   document.getElementById('dashView').style.display='flex';
+  S.showSynthesis=false;
   document.getElementById('dashContent').innerHTML='<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--mono);font-size:11px">加载中...</div>';
   if(isMobile()) mobShow('chat');
   try {
@@ -860,14 +920,17 @@ async function stream(tid){
 function showChat(){
   document.getElementById('emptyMsg').style.display='none';
   document.getElementById('dashView').style.display='none';
+  document.getElementById('synthView').style.display='none';
   document.getElementById('chatView').style.display='flex';
   S.showDashboard=false;
+  S.showSynthesis=false;
   document.getElementById('dashBtn').classList.remove('active');
   mobUpdate();
 }
 function showEmpty(msg){
   document.getElementById('chatView').style.display='none';
   document.getElementById('dashView').style.display='none';
+  document.getElementById('synthView').style.display='none';
   const e=document.getElementById('emptyMsg');e.style.display='flex';e.querySelector('p').textContent=msg;
 }
 function setType(t){S.type=t;document.querySelectorAll('.type-tog button').forEach(b=>{b.classList.toggle('on',b.dataset.t===t);b.classList.toggle(t,b.dataset.t===t);});updateInputForType();}
@@ -879,6 +942,181 @@ function openModal(t){closeModals();document.getElementById(t+'Modal').classList
 function closeModals(){document.querySelectorAll('.modal-bg').forEach(m=>m.classList.remove('open'));}
 async function doSaveKey(){const k=document.getElementById('keyIn').value.trim();await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:k})});const b=document.getElementById('keyBtn');b.classList.add('cfg');b.textContent=k?'⚙ 自有Key':'⚙ 共享额度';document.getElementById('keyIn').value='';closeModals();}
 async function doLogout(){await fetch('/api/auth/logout',{method:'POST'});location.reload();}
+
+// === Synthesis ===
+const CONTAINER_HUES = ['hsl(260,50%,50%)','hsl(160,40%,45%)','hsl(30,50%,50%)','hsl(340,45%,50%)','hsl(200,50%,50%)','hsl(80,40%,45%)'];
+
+async function openSynthesis(){
+  S.showSynthesis=true; S.showDashboard=false; S.activeT=null; S.newThread=false;
+  document.getElementById('emptyMsg').style.display='none';
+  document.getElementById('chatView').style.display='none';
+  document.getElementById('dashView').style.display='none';
+  document.getElementById('synthView').style.display='flex';
+  document.getElementById('dashBtn')?.classList.remove('active');
+  document.getElementById('synthContent').innerHTML='<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--mono);font-size:11px">加载中...</div>';
+  if(isMobile()) mobShow('chat');
+  try {
+    const res = await(await fetch('/api/synthesis')).json();
+    S.synthData = res;
+    renderSynthesis(res);
+  } catch(e) {
+    document.getElementById('synthContent').innerHTML='<div class="dash-empty"><div class="icon">×</div><p>加载失败</p></div>';
+  }
+}
+
+function renderSynthesis(data) {
+  const sc = document.getElementById('synthContent');
+  if(!data.containers.length) {
+    sc.innerHTML='<div class="dash-empty"><div class="icon">◈</div><p>至少需要两个容器才能进行跨容器综合分析。</p></div>';
+    return;
+  }
+  let h = '';
+
+  // Container stat cards
+  h += '<div class="synth-section"><div class="synth-section-title">容器概览</div><div class="synth-cards">';
+  data.containers.forEach((c, i) => {
+    const hueClass = `c-hue-${i % 6}`;
+    const vSign = c.avg_valence > 0.1 ? '+' : c.avg_valence < -0.1 ? '' : '';
+    h += `<div class="synth-card">
+      <div class="sc-name ${hueClass}">${esc(c.name)}</div>
+      <div class="sc-stats">
+        <div class="sc-stat"><span class="sv">${c.entry_count}</span> 条</div>
+        <div class="sc-stat">v <span class="sv">${vSign}${c.avg_valence.toFixed(2)}</span></div>
+        <div class="sc-stat">i <span class="sv">${c.avg_intensity.toFixed(2)}</span></div>
+      </div>
+      ${c.top_themes.length ? `<div class="sc-themes">${c.top_themes.map(t=>`<span>${esc(t)}</span>`).join('')}</div>` : ''}
+    </div>`;
+  });
+  h += '</div></div>';
+
+  // Shared themes bar chart
+  if (data.cross.shared_themes.length) {
+    h += '<div class="synth-section"><div class="synth-section-title">跨容器共享主题</div><div class="synth-shared">';
+    const maxTotal = Math.max(...data.cross.shared_themes.map(s => s.counts.reduce((a,b)=>a+b,0)));
+    for (const st of data.cross.shared_themes.slice(0, 10)) {
+      const total = st.counts.reduce((a,b)=>a+b,0);
+      h += `<div class="synth-bar-row">
+        <span class="synth-bar-label">${esc(st.tag)}</span>
+        <div class="synth-bar-segments">`;
+      st.containers.forEach((cn, ci) => {
+        const pct = (st.counts[ci] / maxTotal) * 100;
+        const cIdx = data.containers.findIndex(c => c.name === cn);
+        const color = CONTAINER_HUES[cIdx % 6] || CONTAINER_HUES[0];
+        h += `<div class="synth-bar-seg" style="width:${Math.max(pct,3)}%;background:${color}" title="${cn}: ${st.counts[ci]}"></div>`;
+      });
+      h += `</div><span class="synth-bar-containers">${st.containers.map(cn => {
+        const cIdx = data.containers.findIndex(c => c.name === cn);
+        const color = CONTAINER_HUES[cIdx % 6] || CONTAINER_HUES[0];
+        return `<span style="color:${color}">${st.counts[st.containers.indexOf(cn)]}</span>`;
+      }).join(' ')}</span></div>`;
+    }
+    h += '</div></div>';
+  }
+
+  // Shared distortions
+  if (data.cross.shared_distortions.length) {
+    h += '<div class="synth-section"><div class="synth-section-title">跨容器共享认知扭曲</div><div class="synth-shared">';
+    const maxD = Math.max(...data.cross.shared_distortions.map(s => s.counts.reduce((a,b)=>a+b,0)));
+    for (const sd of data.cross.shared_distortions.slice(0, 8)) {
+      const total = sd.counts.reduce((a,b)=>a+b,0);
+      h += `<div class="synth-bar-row">
+        <span class="synth-bar-label">${esc(sd.flag)}</span>
+        <div class="synth-bar-segments">`;
+      sd.containers.forEach((cn, ci) => {
+        const pct = (sd.counts[ci] / maxD) * 100;
+        const cIdx = data.containers.findIndex(c => c.name === cn);
+        const color = CONTAINER_HUES[cIdx % 6] || CONTAINER_HUES[0];
+        h += `<div class="synth-bar-seg" style="width:${Math.max(pct,3)}%;background:${color};opacity:0.7" title="${cn}: ${sd.counts[ci]}"></div>`;
+      });
+      h += `</div><span class="synth-bar-containers">${sd.containers.map(cn => {
+        const cIdx = data.containers.findIndex(c => c.name === cn);
+        const color = CONTAINER_HUES[cIdx % 6] || CONTAINER_HUES[0];
+        return `<span style="color:${color}">${sd.counts[sd.containers.indexOf(cn)]}</span>`;
+      }).join(' ')}</span></div>`;
+    }
+    h += '</div></div>';
+  }
+
+  // Temporal overlaps
+  if (data.cross.temporal_overlaps.length) {
+    h += '<div class="synth-section"><div class="synth-section-title">时间重叠 (同日记录于多个容器)</div><div class="synth-temporal">';
+    for (const to of data.cross.temporal_overlaps) {
+      h += `<div class="synth-temporal-day" title="${to.containers.join(', ')}">${to.date.slice(5)}</div>`;
+    }
+    h += '</div></div>';
+  }
+
+  // AI synthesis button
+  h += `<div class="synth-section">
+    <div class="synth-section-title">AI 综合分析</div>
+    <div class="synth-analyze-area" id="synthAnalyzeArea">
+      <div style="text-align:center">
+        <button class="synth-gen-btn" id="synthGenBtn" onclick="runSynthesisAnalysis()">生成分析</button>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:8px">基于所有容器的模式档案，进行跨域综合分析</div>
+      </div>
+    </div>
+  </div>`;
+
+  // Container legend
+  h += '<div class="synth-section"><div class="synth-section-title">容器图例</div><div style="display:flex;gap:12px;flex-wrap:wrap">';
+  data.containers.forEach((c, i) => {
+    const color = CONTAINER_HUES[i % 6];
+    h += `<span style="font-family:var(--mono);font-size:10px;color:var(--muted);display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:${color};display:inline-block"></span>${esc(c.name)}</span>`;
+  });
+  h += '</div></div>';
+
+  sc.innerHTML = h;
+}
+
+async function runSynthesisAnalysis() {
+  const btn = document.getElementById('synthGenBtn');
+  btn.disabled = true;
+  const area = document.getElementById('synthAnalyzeArea');
+  area.innerHTML = `<div class="synth-stream-phase" id="synthPhase">思考中...</div><div class="synth-stream-think" id="synthThink"></div><div class="synth-stream-content" id="synthCont" style="display:none"></div>`;
+
+  try {
+    const resp = await fetch('/api/synthesis/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    let hasCont = false;
+
+    while(true) {
+      const {done, value} = await reader.read();
+      if(done) break;
+      buf += dec.decode(value, {stream:true});
+      const lines = buf.split('\n');
+      buf = lines.pop() || '';
+      for(const ln of lines) {
+        if(!ln.startsWith('data: ')) continue;
+        try {
+          const d = JSON.parse(ln.slice(6));
+          if(d.type === 'thinking') {
+            const e = document.getElementById('synthThink');
+            e.textContent += d.text;
+            e.scrollTop = e.scrollHeight;
+          }
+          if(d.type === 'content') {
+            if(!hasCont) {
+              hasCont = true;
+              document.getElementById('synthPhase').textContent = '分析';
+              document.getElementById('synthThink').style.display = 'none';
+              document.getElementById('synthCont').style.display = 'block';
+            }
+            document.getElementById('synthCont').textContent += d.text;
+          }
+          if(d.type === 'error') {
+            area.innerHTML += `<div class="err-msg">${esc(d.text)}</div>`;
+            return;
+          }
+          if(d.type === 'done') return;
+        } catch(e) {}
+      }
+    }
+  } catch(e) {
+    area.innerHTML += `<div class="err-msg">连接失败</div>`;
+  }
+}
 
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModals();closeEntryPicker();}if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();doSend();}});
 document.querySelectorAll('.modal-bg').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)closeModals();}));

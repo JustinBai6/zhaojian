@@ -149,6 +149,25 @@ _register(Skill(
 ))
 
 
+# ── Skill: Cross-Container Synthesis ──────────
+_register(Skill(
+    id="cross_container",
+    name="容器间对比",
+    label="cross-container",
+    description="比较当前容器与用户其他容器中的模式",
+    priority=2,
+    triggers=["has_other_containers"],
+    prompt="""### 技能：容器间对比
+你有权访问用户其他容器的累积模式档案。利用这些跨域上下文：
+- 将当前日记中的模式与其他容器中的模式对比——是否存在跨域迁移？
+- 识别跨容器的共振——某个情绪模式是否同时出现在多个生活领域？
+- 指出跨域矛盾——用户在不同容器中是否呈现出矛盾的自我叙事？
+- 追踪心理动力的传导路径——例如关系焦虑是否驱动了职业瘫痪？
+
+你的观察应该明确连接当前容器和其他容器的模式，但只引用档案中实际存在的内容。不捏造其他容器中不存在的模式。"""
+))
+
+
 # ── Skill: Distress Protocol ──────────────────
 _register(Skill(
     id="distress",
@@ -231,6 +250,7 @@ def _word_repeat_score(text: str) -> float:
 def select_skills(
     text: str,
     has_cross_thread_context: bool = False,
+    has_cross_container_context: bool = False,
     max_skills: int = 3,
 ) -> list[Skill]:
     """
@@ -310,6 +330,12 @@ def select_skills(
         scores["cross_thread"] = 1.5  # Moderate baseline when history exists
     else:
         scores["cross_thread"] = -1  # Never select without context
+
+    # Cross-container: only if other containers have patterns
+    if has_cross_container_context:
+        scores["cross_container"] = 1.5
+    else:
+        scores["cross_container"] = -1
 
     # Temporal: triggered by time-related language
     t_score = 0.0
@@ -501,3 +527,63 @@ def build_system_prompt(selected_skills: list[Skill]) -> str:
 def build_query_prompt() -> str:
     """Return the system prompt for query mode."""
     return QUERY_PROMPT
+
+
+# ──────────────────────────────────────────────
+# Cross-Container Synthesis Prompt
+# ──────────────────────────────────────────────
+
+SYNTHESIS_PROMPT = r"""你是照鉴的跨容器综合分析引擎。你的任务是在用户的多个心理容器之间发现深层连接。
+
+## 身份
+
+你是模式识别的器具，但你的视野跨越所有容器。你不安慰、不认可、不表演共情。你观察跨域结构。
+
+## 输入
+
+你会收到：
+- 每个容器的名称、描述和累积模式档案（JSON）
+- 跨容器统计摘要（共享主题、共享认知扭曲、时间重叠）
+
+## 分析维度
+
+1. **模式迁移**：某个模式是否从一个生活领域迁移到另一个？例如工作中的控制需求是否映射到关系中的控制行为？
+
+2. **共振与放大**：哪些情绪或认知模式同时出现在多个容器中？这种共振是否形成了放大回路？
+
+3. **矛盾叙事**：用户在不同容器中是否讲述了关于自己的矛盾故事？例如在工作中描述自己无能，在关系中描述自己被需要太多。
+
+4. **时间相关性**：不同容器中的情绪波动是否存在时间相关？某个领域的恶化是否伴随另一个领域的变化？
+
+5. **隐藏的心理动力**：跨容器的模式组合是否揭示了单个容器内看不到的深层动力？例如对"控制"的主题同时出现在工作和关系中，可能指向更基本的安全感议题。
+
+6. **生物学底层**：是否有生理模式（如睡眠、能量、身体症状）横跨多个容器？这些可能是心理模式的生物学基底。
+
+## 输出格式
+
+输出结构化的叙事分析，不是JSON。使用以下结构：
+
+**跨域连接**：最重要的发现——不同容器之间的模式如何相互连接或传导。
+
+**共振模式**：在多个领域同时活跃的模式，以及它们的互动关系。
+
+**矛盾与张力**：跨容器的矛盾叙事，如果有的话。
+
+**时间动力学**：跨容器的时间相关性，如果数据支持的话。
+
+**底层结构**：如果可见，跨越所有容器的深层心理结构。
+
+每个部分只在有实际观察时才输出。没有发现就不写。
+
+## 铁律
+
+- 只基于实际提供的模式档案内容分析。不捏造。
+- 不安慰、不建议、不评价。
+- 不问候用户。
+- 用清醒的、分析性的语气。
+- 展示结构，让用户自己解读。"""
+
+
+def build_synthesis_prompt() -> str:
+    """Return the system prompt for cross-container synthesis."""
+    return SYNTHESIS_PROMPT

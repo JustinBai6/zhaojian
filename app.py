@@ -11,7 +11,7 @@ from functools import wraps
 from flask import Flask, request, Response, send_file, jsonify, session
 import requests as http_requests
 
-from skills import select_skills, build_system_prompt, build_query_prompt, SKILLS
+from skills import select_skills, build_system_prompt, build_query_prompt, build_synthesis_prompt, SKILLS
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("ZHAOJIAN_SECRET", secrets.token_hex(32))
@@ -266,6 +266,210 @@ def container_trends(cid):
             "activity": [{"date": d, "count": c} for d, c in sorted(day_counts.items())],
         }
     })
+
+
+# === Cross-Container Synthesis ===
+@app.route("/api/synthesis", methods=["GET"])
+@login_required
+def synthesis():
+    """Aggregate data across all user containers for cross-container analysis."""
+    db = get_db()
+    containers = db.execute("SELECT * FROM containers WHERE user_id=? ORDER BY created ASC", (uid(),)).fetchall()
+    if not containers:
+        db.close()
+        return jsonify({"containers": [], "cross": {"total_entries": 0, "shared_themes": [], "shared_distortions": [], "temporal_overlaps": []}})
+
+    container_data = []
+    all_theme_map = {}   # tag -> {container_name: count}
+    all_distort_map = {} # flag -> {container_name: count}
+    all_dates_map = {}   # date -> [container_names]
+    total_entries = 0
+
+    for c in containers:
+        threads = db.execute("SELECT id FROM threads WHERE container_id=? AND user_id=?", (c["id"], uid())).fetchall()
+        thread_ids = [t["id"] for t in threads]
+        if not thread_ids:
+            container_data.append({
+                "id": c["id"], "name": c["name"], "entry_count": 0,
+                "patterns": {}, "avg_valence": 0, "avg_intensity": 0,
+                "top_themes": [], "top_distortions": [], "date_range": []
+            })
+            continue
+
+        placeholders = ",".join("?" * len(thread_ids))
+        rows = db.execute(f"""
+            SELECT m.derived_state, m.timestamp FROM messages m
+            WHERE m.thread_id IN ({placeholders}) AND m.role='user'
+            ORDER BY m.timestamp ASC
+        """, thread_ids).fetchall()
+
+        entry_count = len(rows)
+        total_entries += entry_count
+        valences, intensities = [], []
+        theme_counts, distortion_counts = {}, {}
+        dates = []
+
+        for r in rows:
+            dates.append(r["timestamp"][:10])
+            if not r["derived_state"]:
+                continue
+            try:
+                ds = json.loads(r["derived_state"])
+            except (json.JSONDecodeError, TypeError):
+                continue
+            v = ds.get("affect_valence")
+            i = ds.get("affect_intensity")
+            if isinstance(v, (int, float)):
+                valences.append(float(v))
+            if isinstance(i, (int, float)):
+                intensities.append(float(i))
+            for tag in (ds.get("theme_tags") or []):
+                tag = tag.strip().lower()
+                if tag:
+                    theme_counts[tag] = theme_counts.get(tag, 0) + 1
+                    all_theme_map.setdefault(tag, {})[c["name"]] = all_theme_map.get(tag, {}).get(c["name"], 0) + 1
+            for flag in (ds.get("distortion_flags") or []):
+                flag = flag.strip().lower()
+                if flag:
+                    distortion_counts[flag] = distortion_counts.get(flag, 0) + 1
+                    all_distort_map.setdefault(flag, {})[c["name"]] = all_distort_map.get(flag, {}).get(c["name"], 0) + 1
+            for d in dates:
+                all_dates_map.setdefault(d, set()).add(c["name"])
+
+        patterns = {}
+        if c["patterns"] and c["patterns"] != '{}':
+            try:
+                patterns = json.loads(c["patterns"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        avg_v = round(sum(valences) / len(valences), 3) if valences else 0
+        avg_i = round(sum(intensities) / len(intensities), 3) if intensities else 0
+        top_themes = [t for t, _ in sorted(theme_counts.items(), key=lambda x: -x[1])[:5]]
+        top_distortions = [f for f, _ in sorted(distortion_counts.items(), key=lambda x: -x[1])[:5]]
+        date_range = [dates[0], dates[-1]] if dates else []
+
+        container_data.append({
+            "id": c["id"], "name": c["name"], "entry_count": entry_count,
+            "patterns": patterns, "avg_valence": avg_v, "avg_intensity": avg_i,
+            "top_themes": top_themes, "top_distortions": top_distortions,
+            "date_range": date_range
+        })
+
+    # Cross-container intersections
+    shared_themes = []
+    for tag, cmap in all_theme_map.items():
+        if len(cmap) >= 2:
+            containers_list = sorted(cmap.keys())
+            counts = [cmap[cn] for cn in containers_list]
+            shared_themes.append({"tag": tag, "containers": containers_list, "counts": counts})
+    shared_themes.sort(key=lambda x: -sum(x["counts"]))
+
+    shared_distortions = []
+    for flag, cmap in all_distort_map.items():
+        if len(cmap) >= 2:
+            containers_list = sorted(cmap.keys())
+            counts = [cmap[cn] for cn in containers_list]
+            shared_distortions.append({"flag": flag, "containers": containers_list, "counts": counts})
+    shared_distortions.sort(key=lambda x: -sum(x["counts"]))
+
+    temporal_overlaps = []
+    for date, cnames in sorted(all_dates_map.items()):
+        if len(cnames) >= 2:
+            temporal_overlaps.append({"date": date, "containers": sorted(cnames)})
+
+    db.close()
+    return jsonify({
+        "containers": container_data,
+        "cross": {
+            "total_entries": total_entries,
+            "shared_themes": shared_themes[:20],
+            "shared_distortions": shared_distortions[:10],
+            "temporal_overlaps": temporal_overlaps[-20:]
+        }
+    })
+
+
+@app.route("/api/synthesis/analyze", methods=["POST"])
+@login_required
+def synthesis_analyze():
+    """AI-driven cross-container narrative synthesis via streaming SSE."""
+    db = get_db()
+    user = db.execute("SELECT api_key FROM users WHERE id=?", (uid(),)).fetchone()
+    containers = db.execute("SELECT id, name, description, patterns FROM containers WHERE user_id=?", (uid(),)).fetchall()
+    db.close()
+
+    api_key = (user["api_key"] if user and user["api_key"] else "") or SHARED_API_KEY
+    if not api_key:
+        def err():
+            yield f"data: {json.dumps({'type':'error','text':'没有可用的API Key。'})}\n\n"
+        return Response(err(), mimetype="text/event-stream")
+
+    # Build context from container pattern archives
+    context_parts = []
+    has_patterns = False
+    for c in containers:
+        pat = c["patterns"] if c["patterns"] and c["patterns"] != '{}' else None
+        if pat:
+            has_patterns = True
+        context_parts.append(
+            f"=== 容器: {c['name']} ===\n"
+            f"描述: {c['description'] or '无'}\n"
+            f"模式档案: {pat or '（尚无数据）'}\n"
+        )
+
+    if not has_patterns:
+        def no_data():
+            yield f"data: {json.dumps({'type':'error','text':'容器中尚无足够的模式数据进行综合分析。请先在多个容器中写几篇审视类日记。'})}\n\n"
+        return Response(no_data(), mimetype="text/event-stream")
+
+    system_prompt = build_synthesis_prompt()
+    user_content = "\n".join(context_parts)
+    api_msgs = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content}
+    ]
+
+    def generate():
+        try:
+            resp = http_requests.post("https://api.deepseek.com/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": "deepseek-reasoner", "messages": api_msgs, "stream": True},
+                stream=True, timeout=240)
+            if resp.status_code != 200:
+                yield f"data: {json.dumps({'type':'error','text':f'API {resp.status_code}: {resp.text[:300]}'})}\n\n"
+                return
+            think, content = [], []
+            in_content = False
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                dec = line.decode("utf-8")
+                if not dec.startswith("data: "):
+                    continue
+                pay = dec[6:]
+                if pay == "[DONE]":
+                    yield f"data: {json.dumps({'type':'done'})}\n\n"
+                    break
+                try:
+                    ch = json.loads(pay)
+                    delta = ch.get("choices", [{}])[0].get("delta", {})
+                    if rc := delta.get("reasoning_content"):
+                        think.append(rc)
+                        yield f"data: {json.dumps({'type':'thinking','text':rc})}\n\n"
+                    if ct := delta.get("content"):
+                        content.append(ct)
+                        if not in_content:
+                            in_content = True
+                        yield f"data: {json.dumps({'type':'content','text':ct})}\n\n"
+                except:
+                    pass
+        except http_requests.exceptions.Timeout:
+            yield f"data: {json.dumps({'type':'error','text':'Timeout'})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type':'error','text':str(e)})}\n\n"
+
+    return Response(generate(), mimetype="text/event-stream")
 
 
 # === Container Entries Browser (for entry-level pinning) ===
@@ -574,6 +778,21 @@ def observe(tid):
             context_block = f"\n=== 可选参照记录 ===\n{lines}\n=== 选择说明 ===\n在输出末尾附加 {CONTEXT_ID_MK} 换行后写入最相关记录的ID（仅ID），若无相关则写 none。\n"
             auto_context_threads = {s["id"]: s for s in summaries}
 
+    # Cross-container pattern injection
+    cross_container_block = None
+    other_containers = db.execute(
+        "SELECT id, name, patterns FROM containers WHERE user_id=? AND id!=?",
+        (uid(), t["container_id"])).fetchall()
+    has_cross_container_ctx = False
+    if other_containers:
+        cc_parts = []
+        for oc in other_containers:
+            if oc["patterns"] and oc["patterns"] != '{}':
+                cc_parts.append(f"[{oc['name']}]: {oc['patterns']}")
+        if cc_parts:
+            has_cross_container_ctx = True
+            cross_container_block = "\n=== 其他容器模式档案 ===\n" + "\n".join(cc_parts) + "\n=== 其他容器档案结束 ===\n"
+
     db.close()
 
     api_key = (user["api_key"] if user and user["api_key"] else "") or SHARED_API_KEY
@@ -583,10 +802,12 @@ def observe(tid):
 
     user_texts = [m["content"] for m in msgs if m["role"] == "user"]
     all_user_text = "\n".join(user_texts)
-    selected = select_skills(text=all_user_text, has_cross_thread_context=container_patterns is not None, max_skills=3)
+    selected = select_skills(text=all_user_text, has_cross_thread_context=container_patterns is not None, has_cross_container_context=has_cross_container_ctx, max_skills=3)
     skill_ids = [s.id for s in selected]
     system_prompt = build_system_prompt(selected)
-    api_msgs = _build_messages(system_prompt, container, msgs, container_patterns, context_block)
+    # Combine context blocks: thread context + cross-container context
+    combined_context = (context_block or "") + (cross_container_block or "")
+    api_msgs = _build_messages(system_prompt, container, msgs, container_patterns, combined_context or None)
 
     def generate():
         try:
