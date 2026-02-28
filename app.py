@@ -11,7 +11,7 @@ from functools import wraps
 from flask import Flask, request, Response, send_file, jsonify, session
 import requests as http_requests
 
-from skills import select_skills, build_system_prompt, SKILLS
+from skills import select_skills, build_system_prompt, build_query_prompt, SKILLS
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("ZHAOJIAN_SECRET", secrets.token_hex(32))
@@ -53,6 +53,7 @@ def init_db():
         "ALTER TABLE messages ADD COLUMN skills_used TEXT",
         "ALTER TABLE containers ADD COLUMN patterns TEXT DEFAULT '{}'",
         "ALTER TABLE messages ADD COLUMN derived_state TEXT",
+        "ALTER TABLE messages ADD COLUMN msg_type TEXT DEFAULT 'reflect'",
     ]
     for m in migrations:
         try:
@@ -360,9 +361,9 @@ def create_thread(cid):
     title = text[:40] + ("..." if len(text) > 40 else "")
     db = get_db()
     db.execute("INSERT INTO threads VALUES (?,?,?,?,?,?,?)", (tid, cid, uid(), title, ttype, now, now))
-    db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "user", text, None, None, now, None))
+    db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "user", text, None, None, now, None, ttype))
     if ttype == "vent":
-        db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "assistant", "已记录。", None, None, now, None))
+        db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "assistant", "已记录。", None, None, now, None, "vent"))
         db.commit(); db.close(); return jsonify({"thread_id": tid, "stream": False})
     db.commit(); db.close()
     return jsonify({"thread_id": tid, "stream": True})
@@ -375,7 +376,7 @@ def get_thread(tid):
     if not t: db.close(); return jsonify({"error": "Not found"}), 404
     msgs = db.execute("SELECT * FROM messages WHERE thread_id=? ORDER BY timestamp ASC", (tid,)).fetchall()
     db.close()
-    return jsonify({"thread": dict(t), "messages": [{**dict(m), "skills_used": m["skills_used"], "derived_state": m["derived_state"]} for m in msgs]})
+    return jsonify({"thread": dict(t), "messages": [{**dict(m), "skills_used": m["skills_used"], "derived_state": m["derived_state"], "msg_type": m["msg_type"]} for m in msgs]})
 
 @app.route("/api/threads/<tid>", methods=["DELETE"])
 @login_required
@@ -412,10 +413,15 @@ def delete_message(mid):
 @login_required
 def reply(tid):
     d = request.json; now = datetime.now().isoformat(); db = get_db()
+    msg_type = d.get("type", "reflect")
     t = db.execute("SELECT * FROM threads WHERE id=? AND user_id=?", (tid, uid())).fetchone()
     if not t: db.close(); return jsonify({"error": "Not found"}), 404
-    db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "user", d["text"], None, None, now, None))
+    db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "user", d["text"], None, None, now, None, msg_type))
     db.execute("UPDATE threads SET updated=? WHERE id=?", (now, tid))
+    if msg_type == "vent":
+        db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "assistant", "已记录。", None, None, now, None, "vent"))
+        db.commit(); db.close()
+        return jsonify({"stream": False})
     db.commit(); db.close()
     return jsonify({"stream": True})
 
@@ -435,6 +441,70 @@ def observe(tid):
     container_patterns = container["patterns"] if container["patterns"] and container["patterns"] != '{}' else None
     user = db.execute("SELECT api_key FROM users WHERE id=?", (uid(),)).fetchone()
 
+    # Detect last user message's type (per-message, not per-thread)
+    last_user_type = "reflect"
+    for m in reversed(msgs):
+        if m["role"] == "user":
+            last_user_type = m["msg_type"] or "reflect"
+            break
+
+    is_query = last_user_type == "query"
+
+    # Query mode: different prompt construction
+    if is_query:
+        query_context = _build_query_context(db, container, uid())
+        db.close()
+
+        api_key = (user["api_key"] if user and user["api_key"] else "") or SHARED_API_KEY
+        if not api_key:
+            def err(): yield f"data: {json.dumps({'type':'error','text':'没有可用的API Key。'})}\n\n"
+            return Response(err(), mimetype="text/event-stream")
+
+        system_prompt = build_query_prompt()
+        api_msgs = _build_query_messages(system_prompt, container, container_patterns, query_context, msgs)
+
+        def generate_query():
+            try:
+                resp = http_requests.post("https://api.deepseek.com/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    json={"model": "deepseek-reasoner", "messages": api_msgs, "stream": True},
+                    stream=True, timeout=240)
+                if resp.status_code != 200:
+                    yield f"data: {json.dumps({'type':'error','text':f'API {resp.status_code}: {resp.text[:300]}'})}\n\n"; return
+                yield f"data: {json.dumps({'type':'skills','skills':['query']})}\n\n"
+                think, content = [], []
+                in_content = False
+                for line in resp.iter_lines():
+                    if not line: continue
+                    dec = line.decode("utf-8")
+                    if not dec.startswith("data: "): continue
+                    pay = dec[6:]
+                    if pay == "[DONE]":
+                        full_content = "".join(content).strip()
+                        sdb = get_db()
+                        sdb.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?,?)",
+                            (uuid.uuid4().hex[:8], tid, "assistant", full_content, "".join(think), json.dumps(["query"]), datetime.now().isoformat(), None, "query"))
+                        sdb.execute("UPDATE threads SET updated=? WHERE id=?", (datetime.now().isoformat(), tid))
+                        sdb.commit(); sdb.close()
+                        yield f"data: {json.dumps({'type':'done'})}\n\n"; break
+                    try:
+                        ch = json.loads(pay); delta = ch.get("choices",[{}])[0].get("delta",{})
+                        if rc := delta.get("reasoning_content"):
+                            think.append(rc); yield f"data: {json.dumps({'type':'thinking','text':rc})}\n\n"
+                        if ct := delta.get("content"):
+                            content.append(ct)
+                            if not in_content:
+                                in_content = True
+                            yield f"data: {json.dumps({'type':'content','text':ct})}\n\n"
+                    except: pass
+            except http_requests.exceptions.Timeout:
+                yield f"data: {json.dumps({'type':'error','text':'Timeout'})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'type':'error','text':str(e)})}\n\n"
+
+        return Response(generate_query(), mimetype="text/event-stream")
+
+    # === Reflect mode (existing logic) ===
     context_block = None
     pinned_context_info = None
     auto_context_threads = None
@@ -544,8 +614,8 @@ def observe(tid):
                     for m in reversed(msgs):
                         if m["role"] == "user": last_user_mid = m["id"]; break
                     sdb = get_db()
-                    sdb.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?)",
-                        (uuid.uuid4().hex[:8], tid, "assistant", observation, "".join(think), json.dumps(skill_ids), datetime.now().isoformat(), None))
+                    sdb.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?,?)",
+                        (uuid.uuid4().hex[:8], tid, "assistant", observation, "".join(think), json.dumps(skill_ids), datetime.now().isoformat(), None, "reflect"))
                     sdb.execute("UPDATE threads SET updated=? WHERE id=?", (datetime.now().isoformat(), tid))
                     if patterns_json: sdb.execute("UPDATE containers SET patterns=? WHERE id=?", (patterns_json, t["container_id"]))
                     if derived_json and last_user_mid: sdb.execute("UPDATE messages SET derived_state=? WHERE id=?", (derived_json, last_user_mid))
@@ -624,6 +694,95 @@ def _build_messages(system_prompt, container, thread_msgs, container_patterns, c
     for i, m in enumerate(thread_msgs):
         c = m["content"]
         if i == 0 and m["role"] == "user": c = ctx + "\n=== 当前日记 ===\n" + c
+        out.append({"role": m["role"], "content": c})
+    return out
+
+
+def _build_query_context(db, container, uid_val):
+    """Assemble all container entries with derived states for query mode."""
+    threads = db.execute(
+        "SELECT id, title, created FROM threads WHERE container_id=? AND user_id=? ORDER BY created ASC",
+        (container["id"], uid_val)).fetchall()
+    if not threads:
+        return ""
+
+    thread_ids = [t["id"] for t in threads]
+    placeholders = ",".join("?" * len(thread_ids))
+
+    # Get all user messages with derived states
+    rows = db.execute(f"""
+        SELECT m.id, m.thread_id, m.content, m.derived_state, m.timestamp
+        FROM messages m WHERE m.thread_id IN ({placeholders}) AND m.role='user'
+        ORDER BY m.timestamp ASC
+    """, thread_ids).fetchall()
+
+    # Also get assistant observations for each user message
+    entries = []
+    for r in rows:
+        ds = None
+        if r["derived_state"]:
+            try:
+                ds = json.loads(r["derived_state"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # Get the observation that followed this entry
+        obs = db.execute(
+            "SELECT content FROM messages WHERE thread_id=? AND role='assistant' AND timestamp > ? ORDER BY timestamp ASC LIMIT 1",
+            (r["thread_id"], r["timestamp"])).fetchone()
+
+        entry = {
+            "date": r["timestamp"][:10],
+            "text": r["content"][:500],  # Cap per-entry text to manage token budget
+            "observation": obs["content"][:200] if obs and obs["content"] != "已记录。" else None,
+            "derived": ds,
+        }
+        entries.append(entry)
+
+    if not entries:
+        return ""
+
+    # Build condensed context block
+    lines = [f"=== 容器日记档案（共{len(entries)}条） ===\n"]
+    for i, e in enumerate(entries):
+        line = f"[{e['date']}] {e['text']}"
+        if e["derived"]:
+            ds = e["derived"]
+            meta_parts = []
+            if ds.get("affect_valence") is not None:
+                meta_parts.append(f"v:{ds['affect_valence']}")
+            if ds.get("affect_intensity") is not None:
+                meta_parts.append(f"i:{ds['affect_intensity']}")
+            if ds.get("theme_tags"):
+                meta_parts.append(f"主题:{','.join(ds['theme_tags'][:5])}")
+            if ds.get("distortion_flags"):
+                meta_parts.append(f"扭曲:{','.join(ds['distortion_flags'][:3])}")
+            if ds.get("salience_markers"):
+                meta_parts.append(f"显著:{','.join(ds['salience_markers'][:3])}")
+            if meta_parts:
+                line += f"\n  [{' | '.join(meta_parts)}]"
+        if e["observation"]:
+            line += f"\n  [观察]: {e['observation']}"
+        lines.append(line)
+
+    lines.append("\n=== 档案结束 ===")
+    return "\n".join(lines)
+
+
+def _build_query_messages(system_prompt, container, container_patterns, query_context, thread_msgs):
+    """Build messages for query mode."""
+    out = [{"role": "system", "content": system_prompt}]
+    ctx = f"容器名称: {container['name']}\n"
+    if container["description"]:
+        ctx += f"容器描述: {container['description']}\n"
+    if container_patterns:
+        ctx += f"\n=== 容器累积模式档案 ===\n{container_patterns}\n"
+    ctx += "\n" + query_context + "\n"
+
+    for i, m in enumerate(thread_msgs):
+        c = m["content"]
+        if i == 0 and m["role"] == "user":
+            c = ctx + "\n=== 查询 ===\n" + c
         out.append({"role": m["role"], "content": c})
     return out
 

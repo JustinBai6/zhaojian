@@ -10,7 +10,7 @@
     --bg: #08080a; --surface: #0f0f13; --raised: #16161c; --border: #1e1e26;
     --bsub: #14141a; --text: #c8c8d0; --dim: #5c5c6a; --muted: #3a3a46;
     --accent: #8b7ec8; --accdim: #5a5080; --obs: #d8d4e0; --think: #44445a;
-    --vent: #6b8f71; --danger: #c87070;
+    --vent: #6b8f71; --danger: #c87070; --query: #c8a86b;
     --serif: 'Noto Serif SC','Songti SC',serif;
     --mono: 'IBM Plex Mono','SF Mono',monospace;
     --sans: -apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
@@ -65,6 +65,7 @@
   .thread-item .ttype { font-size:9px; font-family:var(--mono); letter-spacing:1px; text-transform:uppercase; padding:1px 5px; border-radius:2px; background:var(--raised); }
   .thread-item .ttype.reflect { color:var(--accdim); }
   .thread-item .ttype.vent { color:var(--vent); }
+  .thread-item .ttype.query { color:var(--query); }
   .thread-item .del { position:absolute; right:8px; top:12px; background:none; border:none; color:var(--muted); cursor:pointer; font-size:13px; opacity:0; transition:opacity .12s; }
   .thread-item:hover .del { opacity:1; }
   .thread-item .del:hover { color:var(--danger); }
@@ -132,6 +133,7 @@
   .msg-body.user-text { color:var(--text); }
   .msg-body.ai-text { color:var(--obs); padding-left:14px; border-left:2px solid var(--accdim); }
   .msg-body.vent-text { color:var(--dim); font-style:italic; padding-left:14px; border-left:2px solid var(--vent); }
+  .msg-body.query-text { color:var(--obs); padding-left:14px; border-left:2px solid var(--query); }
 
   .skill-tags { display:flex; gap:5px; flex-wrap:wrap; margin-top:6px; }
   .skill-tag { font-family:var(--mono); font-size:9px; letter-spacing:1px; color:var(--muted); background:var(--bsub); border:1px solid var(--border); padding:1px 7px; border-radius:2px; cursor:default; transition:color .12s; }
@@ -162,6 +164,7 @@
   .type-tog button.on { background:var(--raised); color:var(--text); }
   .type-tog button.on.reflect { color:var(--accent); }
   .type-tog button.on.vent { color:var(--vent); }
+  .type-tog button.on.query { color:var(--query); }
   .cc { font-family:var(--mono); font-size:10px; color:var(--muted); margin-left:auto; }
   .input-row { display:flex; gap:10px; align-items:flex-end; }
   .input-row textarea { flex:1; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:var(--serif); font-size:15px; line-height:1.8; padding:12px 14px; resize:none; border-radius:3px; min-height:52px; max-height:180px; outline:none; transition:border-color .12s; }
@@ -320,6 +323,7 @@
             <div class="type-tog" id="typeTog">
               <button class="on reflect" data-t="reflect" onclick="setType('reflect')">审视</button>
               <button data-t="vent" onclick="setType('vent')">倾诉</button>
+              <button data-t="query" onclick="setType('query')">查询</button>
             </div>
             <button class="pin-entries-btn" id="pinEntriesBtn" onclick="toggleEntryPicker()" title="选择参照记录">参照</button>
             <span class="cc" id="cc">0</span>
@@ -349,7 +353,7 @@
 </div></div>
 
 <script>
-const SKILL_NAMES = { quantitative:'量化扫描', narrative:'叙事追踪', syntax:'句法透视', biological:'生物透镜', cross_thread:'跨线索织网', temporal:'时间棱镜', distress:'急性协议' };
+const SKILL_NAMES = { quantitative:'量化扫描', narrative:'叙事追踪', syntax:'句法透视', biological:'生物透镜', cross_thread:'跨线索织网', temporal:'时间棱镜', distress:'急性协议', query:'数据查询' };
 
 let S = { containers:[], activeC:null, threads:[], activeT:null, type:'reflect', streaming:false, newThread:true,
   pinnedContextId:null, contextThread:null,
@@ -506,7 +510,7 @@ function renderThreads(){
     const d=new Date(t.updated).toLocaleDateString('zh-CN',{month:'short',day:'numeric'});
     const isPinned=S.pinnedContextId===t.id;
     return `<div class="thread-item ${S.activeT?.id===t.id?'active':''}" onclick="selectThread('${t.id}')">
-      <div style="display:flex;align-items:center;gap:6px"><span class="ttype ${t.type}">${t.type==='vent'?'倾诉':'审视'}</span><span class="tmeta">${d}</span></div>
+      <div style="display:flex;align-items:center;gap:6px"><span class="tmeta">${d}</span></div>
       <div class="title">${esc(t.title)}</div>
       <button class="pin-btn ${isPinned?'pinned':''}" onclick="event.stopPropagation();togglePin('${t.id}')" title="${isPinned?'取消锁定':'设为参照'}">⊙</button>
       <button class="del" onclick="event.stopPropagation();delThread('${t.id}')">×</button>
@@ -520,9 +524,8 @@ async function selectThread(id){
   renderThreads();
   const data=await(await fetch(`/api/threads/${id}`)).json();
   S.activeT._msgs=data.messages; showChat(); renderMessages();
-  document.getElementById('typeTog').style.display='none';
-  document.getElementById('inp').placeholder='回应...';
-  document.getElementById('sendBtn').textContent='回应';
+  document.getElementById('typeTog').style.display='flex';
+  updateInputForType();
   if (isMobile()) mobShow('chat');
 }
 function startNewThread(){
@@ -532,10 +535,17 @@ function startNewThread(){
   renderThreads(); showChat();
   document.getElementById('feed').innerHTML='';
   document.getElementById('typeTog').style.display='flex';
-  document.getElementById('inp').placeholder='写点什么...';
-  document.getElementById('sendBtn').textContent='记录';
+  document.getElementById('pinEntriesBtn').style.display='';
+  updateInputForType();
   document.getElementById('inp').focus();
   if (isMobile()) mobShow('chat');
+}
+function updateInputForType(){
+  const isQ=S.type==='query';
+  document.getElementById('inp').placeholder=isQ?'问一个关于你自己的问题...':'写点什么...';
+  document.getElementById('sendBtn').textContent=isQ?'查询':'记录';
+  // Hide pin button for query mode (auto-loads all container data)
+  document.getElementById('pinEntriesBtn').style.display=isQ?'none':'';
 }
 async function delThread(id){
   if(!confirm('删除这条日记？')) return;
@@ -559,10 +569,13 @@ function renderMessages(){
   if(!S.activeT?._msgs)return;
   const feed=document.getElementById('feed');
   feed.innerHTML=S.activeT._msgs.map(m=>{
+    const mt=m.msg_type||'reflect';
     const time=new Date(m.timestamp).toLocaleString('zh-CN',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-    if(m.role==='user') return `<div class="msg"><div class="msg-head"><span class="msg-role user">日记</span><span class="msg-time">${time}</span></div><div class="msg-body user-text">${esc(m.content)}</div>${renderDerived(m.derived_state)}<button class="msg-del" onclick="delMsg('${m.id}')">×</button></div>`;
-    const isVent=m.content==='已记录。';
-    return `<div class="msg"><div class="msg-head"><span class="msg-role assistant">照鉴</span><span class="msg-time">${time}</span></div><div class="msg-body ${isVent?'vent-text':'ai-text'}">${esc(m.content)}</div>${renderSkillTags(m.skills_used)}${m.thinking?`<button class="think-toggle" onclick="togThink(this)">› 思考过程</button><div class="think-box">${esc(m.thinking)}</div>`:''}</div>`;
+    if(m.role==='user') return `<div class="msg"><div class="msg-head"><span class="msg-role user">${mt==='query'?'查询':mt==='vent'?'倾诉':'日记'}</span><span class="msg-time">${time}</span></div><div class="msg-body user-text">${esc(m.content)}</div>${mt==='reflect'?renderDerived(m.derived_state):''}<button class="msg-del" onclick="delMsg('${m.id}')">×</button></div>`;
+    const bodyClass=mt==='vent'?'vent-text':mt==='query'?'query-text':'ai-text';
+    const roleLabel=mt==='query'?'检索':mt==='vent'?'':'照鉴';
+    if(mt==='vent') return `<div class="msg"><div class="msg-head"><span class="msg-role assistant">照鉴</span><span class="msg-time">${time}</span></div><div class="msg-body vent-text">${esc(m.content)}</div></div>`;
+    return `<div class="msg"><div class="msg-head"><span class="msg-role assistant">${roleLabel}</span><span class="msg-time">${time}</span></div><div class="msg-body ${bodyClass}">${esc(m.content)}</div>${renderSkillTags(m.skills_used)}${m.thinking?`<button class="think-toggle" onclick="togThink(this)">› 思考过程</button><div class="think-box">${esc(m.thinking)}</div>`:''}</div>`;
   }).join('')+'<div id="streamArea"></div>';
   scrollBot();
 }
@@ -795,16 +808,14 @@ async function doSend(){
     if(!res.stream){await selectThread(res.thread_id);btn.disabled=false;return;}
     const td=await(await fetch(`/api/threads/${res.thread_id}`)).json();
     S.activeT._msgs=td.messages;S.newThread=false;renderThreads();showChat();renderMessages();
-    document.getElementById('typeTog').style.display='none';
-    document.getElementById('inp').placeholder='回应...';
-    document.getElementById('sendBtn').textContent='回应';
     S.streaming=true; await stream(res.thread_id); S.streaming=false;btn.disabled=false;
     await reloadThread(res.thread_id);
   } else {
-    await fetch(`/api/threads/${S.activeT.id}/reply`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+    const res=await(await fetch(`/api/threads/${S.activeT.id}/reply`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,type:S.type})})).json();
     inp.value='';onInput();
     const td=await(await fetch(`/api/threads/${S.activeT.id}`)).json();
     S.activeT._msgs=td.messages;renderMessages();
+    if(!res.stream){btn.disabled=false;return;}
     S.streaming=true; await stream(S.activeT.id); S.streaming=false;btn.disabled=false;
     await reloadThread(S.activeT.id);
   }
@@ -813,7 +824,9 @@ async function reloadThread(tid){const td=await(await fetch(`/api/threads/${tid}
 
 async function stream(tid){
   const area=document.getElementById('streamArea');
-  area.innerHTML=`<div class="stream-block"><div class="stream-skills" id="sSkills"></div><div class="stream-phase" id="sPhase">思考中...</div><div class="stream-think" id="sThink"></div><div class="stream-content" id="sCont" style="display:none"></div><div class="stream-derived" id="sDerived"></div></div>`;
+  const isQ=S.type==='query';
+  const borderColor=isQ?'var(--query)':'var(--accdim)';
+  area.innerHTML=`<div class="stream-block"><div class="stream-skills" id="sSkills"></div><div class="stream-phase" id="sPhase">思考中...</div><div class="stream-think" id="sThink"></div><div class="stream-content" id="sCont" style="display:none;border-left-color:${borderColor}"></div><div class="stream-derived" id="sDerived"></div></div>`;
   scrollBot();
   const body = {
     pinned_context_id: S.pinnedContextId || null,
@@ -831,7 +844,7 @@ async function stream(tid){
             const d=JSON.parse(ln.slice(6));
             if(d.type==='skills'){document.getElementById('sSkills').innerHTML=d.skills.map(s=>`<span class="skill-tag">${SKILL_NAMES[s]||s}</span>`).join('');}
             if(d.type==='thinking'){const e=document.getElementById('sThink');e.textContent+=d.text;e.scrollTop=e.scrollHeight;scrollBot();}
-            if(d.type==='content'){if(!hasCont){hasCont=true;document.getElementById('sPhase').textContent='观察';document.getElementById('sThink').style.display='none';document.getElementById('sCont').style.display='block';}document.getElementById('sCont').textContent+=d.text;scrollBot();}
+            if(d.type==='content'){if(!hasCont){hasCont=true;document.getElementById('sPhase').textContent=isQ?'检索':'观察';document.getElementById('sThink').style.display='none';document.getElementById('sCont').style.display='block';}document.getElementById('sCont').textContent+=d.text;scrollBot();}
             if(d.type==='derived'){document.getElementById('sDerived').innerHTML=renderDerived(d.data);}
             if(d.type==='context'){showContextWindow(d.data);}
             if(d.type==='error'){area.innerHTML+=`<div class="err-msg">${esc(d.text)}</div>`;resolve();return;}
@@ -857,7 +870,7 @@ function showEmpty(msg){
   document.getElementById('dashView').style.display='none';
   const e=document.getElementById('emptyMsg');e.style.display='flex';e.querySelector('p').textContent=msg;
 }
-function setType(t){S.type=t;document.querySelectorAll('.type-tog button').forEach(b=>{b.classList.toggle('on',b.dataset.t===t);b.classList.toggle(t,b.dataset.t===t);});}
+function setType(t){S.type=t;document.querySelectorAll('.type-tog button').forEach(b=>{b.classList.toggle('on',b.dataset.t===t);b.classList.toggle(t,b.dataset.t===t);});updateInputForType();}
 function onInput(){const i=document.getElementById('inp');document.getElementById('cc').textContent=i.value.length;i.style.height='auto';i.style.height=Math.min(i.scrollHeight,180)+'px';}
 function scrollBot(){const f=document.getElementById('feed');if(f)f.scrollTop=f.scrollHeight;}
 function esc(s){return s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>'):''}
