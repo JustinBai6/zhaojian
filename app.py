@@ -222,7 +222,23 @@ def container_trends(cid):
         for e in entries
     ]
 
-    # 2. High-frequency word distribution (aggregate across entries)
+    # 2. Affect timeline (from AI-extracted valence/intensity in derived state)
+    affect_timeline = []
+    for e in entries_with_state:
+        ds = e["derived"]
+        v = ds.get("affect_valence")
+        i = ds.get("affect_intensity")
+        if v is not None and i is not None:
+            try:
+                affect_timeline.append({
+                    "timestamp": e["timestamp"],
+                    "valence": float(v),
+                    "intensity": float(i),
+                })
+            except (TypeError, ValueError):
+                pass
+
+    # 3. High-frequency word distribution (aggregate across entries)
     word_counts = {}
     for e in entries_with_state:
         for word in (e["derived"].get("high_frequency_words") or []):
@@ -230,7 +246,7 @@ def container_trends(cid):
             if word: word_counts[word] = word_counts.get(word, 0) + 1
     word_freq = sorted(word_counts.items(), key=lambda x: -x[1])[:15]
 
-    # 3. Syntactic signal frequency (aggregate across entries)
+    # 4. Syntactic signal frequency (aggregate across entries)
     signal_counts = {}
     for e in entries_with_state:
         for sig in (e["derived"].get("syntactic_signals") or []):
@@ -238,7 +254,7 @@ def container_trends(cid):
             if sig: signal_counts[sig] = signal_counts.get(sig, 0) + 1
     signal_freq = sorted(signal_counts.items(), key=lambda x: -x[1])[:10]
 
-    # 4. Salience markers (collect unique, recent first)
+    # 5. Salience markers (collect unique, recent first)
     salience = []
     seen = set()
     for e in reversed(entries_with_state):
@@ -250,12 +266,12 @@ def container_trends(cid):
             if len(salience) >= 12: break
         if len(salience) >= 12: break
 
-    # 5. Aggregate stats (from raw-text computed ratios across all entries)
+    # 6. Aggregate stats (from raw-text computed ratios across all entries)
     avg_hedge_ratio = sum(e["hedge_ratio"] for e in entries) / len(entries) if entries else 0
     avg_negation_ratio = sum(e["negation_ratio"] for e in entries) / len(entries) if entries else 0
     avg_pivot_ratio = sum(e["pivot_ratio"] for e in entries) / len(entries) if entries else 0
 
-    # 6. Entry activity (entries per day for the activity heatmap)
+    # 7. Entry activity (entries per day for the activity heatmap)
     day_counts = {}
     for e in entries:
         day = e["timestamp"][:10]
@@ -265,6 +281,7 @@ def container_trends(cid):
         "trends": {
             "total_entries": total_entries,
             "entries_with_state": len(entries_with_state),
+            "affect_timeline": affect_timeline,
             "language_timeline": language_timeline,
             "avg_hedge_ratio": round(avg_hedge_ratio, 4),
             "avg_negation_ratio": round(avg_negation_ratio, 4),
