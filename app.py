@@ -11,7 +11,12 @@ from functools import wraps
 from flask import Flask, request, Response, send_file, jsonify, session
 import requests as http_requests
 
-from skills import select_skills, build_system_prompt, build_query_prompt, build_synthesis_prompt, SKILLS
+from skills import select_skills, build_system_prompt, build_query_prompt, build_synthesis_prompt, SKILLS, _count_matches, HEDGE_PATTERNS, COUNTABLE_PATTERNS
+
+# Negation words for server-side text analysis
+_NEGATION_PATTERNS = [r"不[^，。？！\s]{0,4}", r"没有?", r"无法", r"别", r"勿", r"未"]
+# Pivot words for server-side text analysis (subset of COUNTABLE_PATTERNS)
+_PIVOT_PATTERNS = [r"但是", r"可是", r"不过", r"然而", r"却"]
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("ZHAOJIAN_SECRET", secrets.token_hex(32))
@@ -180,39 +185,42 @@ def container_trends(cid):
     """, thread_ids).fetchall()
     db.close()
 
-    # Parse all derived states
+    # Parse all derived states and compute text-based signals from raw content
     entries = []
     for r in rows:
         ds = None
         if r["derived_state"]:
             try: ds = json.loads(r["derived_state"])
             except (json.JSONDecodeError, TypeError): pass
+        text = r["content"] or ""
+        wc = max(len(text), 1)
         entries.append({
             "timestamp": r["timestamp"],
             "has_state": ds is not None,
             "derived": ds,
-            "word_count": len(r["content"]),
+            "word_count": wc,
+            # Always computed server-side from raw text for reliable timeline
+            "hedge_ratio": round(_count_matches(text, HEDGE_PATTERNS) / wc, 4),
+            "negation_ratio": round(_count_matches(text, _NEGATION_PATTERNS) / wc, 4),
+            "pivot_ratio": round(_count_matches(text, _PIVOT_PATTERNS) / wc, 4),
         })
 
     total_entries = len(entries)
     entries_with_state = [e for e in entries if e["has_state"]]
 
-    if not entries_with_state:
+    if not entries:
         return jsonify({"trends": None, "reason": "no_derived_states", "total_entries": total_entries})
 
-    # 1. Language signal timeline (chronological series of hedge/negation ratios)
-    language_timeline = []
-    for e in entries_with_state:
-        ds = e["derived"]
-        wc = ds.get("word_count") or e["word_count"] or 1
-        hc = ds.get("hedge_count")
-        nc = ds.get("negation_count")
-        if hc is not None and nc is not None:
-            language_timeline.append({
-                "timestamp": e["timestamp"],
-                "hedge_ratio": round(int(hc) / max(int(wc), 1), 4),
-                "negation_ratio": round(int(nc) / max(int(wc), 1), 4),
-            })
+    # 1. Language signal timeline — uses ALL entries (computed from raw text, no LLM required)
+    language_timeline = [
+        {
+            "timestamp": e["timestamp"],
+            "hedge_ratio": e["hedge_ratio"],
+            "negation_ratio": e["negation_ratio"],
+            "pivot_ratio": e["pivot_ratio"],
+        }
+        for e in entries
+    ]
 
     # 2. High-frequency word distribution (aggregate across entries)
     word_counts = {}
@@ -242,11 +250,10 @@ def container_trends(cid):
             if len(salience) >= 12: break
         if len(salience) >= 12: break
 
-    # 5. Aggregate stats
-    hedge_ratios = [p["hedge_ratio"] for p in language_timeline]
-    negation_ratios = [p["negation_ratio"] for p in language_timeline]
-    avg_hedge_ratio = sum(hedge_ratios) / len(hedge_ratios) if hedge_ratios else 0
-    avg_negation_ratio = sum(negation_ratios) / len(negation_ratios) if negation_ratios else 0
+    # 5. Aggregate stats (from raw-text computed ratios across all entries)
+    avg_hedge_ratio = sum(e["hedge_ratio"] for e in entries) / len(entries) if entries else 0
+    avg_negation_ratio = sum(e["negation_ratio"] for e in entries) / len(entries) if entries else 0
+    avg_pivot_ratio = sum(e["pivot_ratio"] for e in entries) / len(entries) if entries else 0
 
     # 6. Entry activity (entries per day for the activity heatmap)
     day_counts = {}
@@ -261,6 +268,7 @@ def container_trends(cid):
             "language_timeline": language_timeline,
             "avg_hedge_ratio": round(avg_hedge_ratio, 4),
             "avg_negation_ratio": round(avg_negation_ratio, 4),
+            "avg_pivot_ratio": round(avg_pivot_ratio, 4),
             "word_freq": [{"word": w, "count": c} for w, c in word_freq],
             "signal_freq": [{"signal": s, "count": c} for s, c in signal_freq],
             "salience_markers": salience,

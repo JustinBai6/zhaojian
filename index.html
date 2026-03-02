@@ -672,6 +672,7 @@ function renderDashboard(t) {
       <div class="affect-legend">
         <span><span class="dot" style="background:var(--accdim)"></span> 软化词比</span>
         <span><span class="dot" style="background:var(--vent)"></span> 否定词比</span>
+        <span><span class="dot" style="background:#8f7a50"></span> 转折词比</span>
       </div>
     </div>`;
   } else if (t.language_timeline.length === 1) {
@@ -679,7 +680,7 @@ function renderDashboard(t) {
     h += `<div class="dash-section">
       <div class="dash-section-title">语言信号轨迹</div>
       <div style="padding:20px;text-align:center;color:var(--muted);font-size:12px">
-        <span style="font-family:var(--mono)">软化词比: ${(pt.hedge_ratio*100).toFixed(1)}% · 否定词比: ${(pt.negation_ratio*100).toFixed(1)}%</span>
+        <span style="font-family:var(--mono)">软化 ${(pt.hedge_ratio*100).toFixed(1)}% · 否定 ${(pt.negation_ratio*100).toFixed(1)}% · 转折 ${(pt.pivot_ratio*100).toFixed(1)}%</span>
         <br><span style="font-size:11px;margin-top:4px;display:inline-block">需要更多条目以绘制轨迹</span>
       </div>
     </div>`;
@@ -742,7 +743,7 @@ function buildLanguageSVG(timeline) {
   const ry = (v) => PADT + (1 - v) * chartH;
 
   // Dynamic max for y-axis labels
-  const allVals = timeline.flatMap(p => [p.hedge_ratio, p.negation_ratio]);
+  const allVals = timeline.flatMap(p => [p.hedge_ratio, p.negation_ratio, p.pivot_ratio || 0]);
   const dataMax = Math.max(...allVals, 0.05);
   const axisMax = Math.ceil(dataMax * 20) / 20; // round up to nearest 5%
   const gridLines = [0, axisMax * 0.25, axisMax * 0.5, axisMax * 0.75, axisMax];
@@ -756,6 +757,11 @@ function buildLanguageSVG(timeline) {
     svg += `<line x1="${PAD}" y1="${y}" x2="${W-PADR}" y2="${y}" stroke="#1e1e26" stroke-width="1"/>`;
     svg += `<text x="${PAD-4}" y="${y+3}" fill="#3a3a46" font-size="9" font-family="IBM Plex Mono,monospace" text-anchor="end">${(gl*100).toFixed(0)}%</text>`;
   }
+
+  // Pivot ratio line (behind others)
+  let pPath = `M ${xs[0]} ${normY(timeline[0].pivot_ratio || 0)}`;
+  for (let i = 1; i < n; i++) pPath += ` L ${xs[i]} ${normY(timeline[i].pivot_ratio || 0)}`;
+  svg += `<path d="${pPath}" fill="none" stroke="#8f7a50" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2,4"/>`;
 
   // Hedge ratio line
   let hPath = `M ${xs[0]} ${normY(timeline[0].hedge_ratio)}`;
