@@ -200,34 +200,35 @@ def container_trends(cid):
     if not entries_with_state:
         return jsonify({"trends": None, "reason": "no_derived_states", "total_entries": total_entries})
 
-    # 1. Affect timeline (chronological series)
-    affect_timeline = []
+    # 1. Language signal timeline (chronological series of hedge/negation ratios)
+    language_timeline = []
     for e in entries_with_state:
         ds = e["derived"]
-        v = ds.get("affect_valence")
-        i = ds.get("affect_intensity")
-        if v is not None and i is not None:
-            affect_timeline.append({
+        wc = ds.get("word_count") or e["word_count"] or 1
+        hc = ds.get("hedge_count")
+        nc = ds.get("negation_count")
+        if hc is not None and nc is not None:
+            language_timeline.append({
                 "timestamp": e["timestamp"],
-                "valence": float(v) if isinstance(v, (int, float)) else 0,
-                "intensity": float(i) if isinstance(i, (int, float)) else 0,
+                "hedge_ratio": round(int(hc) / max(int(wc), 1), 4),
+                "negation_ratio": round(int(nc) / max(int(wc), 1), 4),
             })
 
-    # 2. Theme frequency
-    theme_counts = {}
+    # 2. High-frequency word distribution (aggregate across entries)
+    word_counts = {}
     for e in entries_with_state:
-        for tag in (e["derived"].get("theme_tags") or []):
-            tag = tag.strip().lower()
-            if tag: theme_counts[tag] = theme_counts.get(tag, 0) + 1
-    theme_freq = sorted(theme_counts.items(), key=lambda x: -x[1])[:15]
+        for word in (e["derived"].get("high_frequency_words") or []):
+            word = word.strip()
+            if word: word_counts[word] = word_counts.get(word, 0) + 1
+    word_freq = sorted(word_counts.items(), key=lambda x: -x[1])[:15]
 
-    # 3. Distortion frequency
-    distortion_counts = {}
+    # 3. Syntactic signal frequency (aggregate across entries)
+    signal_counts = {}
     for e in entries_with_state:
-        for flag in (e["derived"].get("distortion_flags") or []):
-            flag = flag.strip().lower()
-            if flag: distortion_counts[flag] = distortion_counts.get(flag, 0) + 1
-    distortion_freq = sorted(distortion_counts.items(), key=lambda x: -x[1])[:10]
+        for sig in (e["derived"].get("syntactic_signals") or []):
+            sig = sig.strip()
+            if sig: signal_counts[sig] = signal_counts.get(sig, 0) + 1
+    signal_freq = sorted(signal_counts.items(), key=lambda x: -x[1])[:10]
 
     # 4. Salience markers (collect unique, recent first)
     salience = []
@@ -242,10 +243,10 @@ def container_trends(cid):
         if len(salience) >= 12: break
 
     # 5. Aggregate stats
-    valences = [a["valence"] for a in affect_timeline]
-    intensities = [a["intensity"] for a in affect_timeline]
-    avg_valence = sum(valences) / len(valences) if valences else 0
-    avg_intensity = sum(intensities) / len(intensities) if intensities else 0
+    hedge_ratios = [p["hedge_ratio"] for p in language_timeline]
+    negation_ratios = [p["negation_ratio"] for p in language_timeline]
+    avg_hedge_ratio = sum(hedge_ratios) / len(hedge_ratios) if hedge_ratios else 0
+    avg_negation_ratio = sum(negation_ratios) / len(negation_ratios) if negation_ratios else 0
 
     # 6. Entry activity (entries per day for the activity heatmap)
     day_counts = {}
@@ -257,11 +258,11 @@ def container_trends(cid):
         "trends": {
             "total_entries": total_entries,
             "entries_with_state": len(entries_with_state),
-            "affect_timeline": affect_timeline,
-            "avg_valence": round(avg_valence, 3),
-            "avg_intensity": round(avg_intensity, 3),
-            "theme_freq": [{"tag": t, "count": c} for t, c in theme_freq],
-            "distortion_freq": [{"flag": f, "count": c} for f, c in distortion_freq],
+            "language_timeline": language_timeline,
+            "avg_hedge_ratio": round(avg_hedge_ratio, 4),
+            "avg_negation_ratio": round(avg_negation_ratio, 4),
+            "word_freq": [{"word": w, "count": c} for w, c in word_freq],
+            "signal_freq": [{"signal": s, "count": c} for s, c in signal_freq],
             "salience_markers": salience,
             "activity": [{"date": d, "count": c} for d, c in sorted(day_counts.items())],
         }
@@ -277,11 +278,11 @@ def synthesis():
     containers = db.execute("SELECT * FROM containers WHERE user_id=? ORDER BY created ASC", (uid(),)).fetchall()
     if not containers:
         db.close()
-        return jsonify({"containers": [], "cross": {"total_entries": 0, "shared_themes": [], "shared_distortions": [], "temporal_overlaps": []}})
+        return jsonify({"containers": [], "cross": {"total_entries": 0, "shared_words": [], "shared_signals": [], "temporal_overlaps": []}})
 
     container_data = []
-    all_theme_map = {}   # tag -> {container_name: count}
-    all_distort_map = {} # flag -> {container_name: count}
+    all_word_map = {}    # word -> {container_name: count}
+    all_signal_map = {}  # signal -> {container_name: count}
     all_dates_map = {}   # date -> [container_names]
     total_entries = 0
 
@@ -291,8 +292,8 @@ def synthesis():
         if not thread_ids:
             container_data.append({
                 "id": c["id"], "name": c["name"], "entry_count": 0,
-                "patterns": {}, "avg_valence": 0, "avg_intensity": 0,
-                "top_themes": [], "top_distortions": [], "date_range": []
+                "patterns": {}, "avg_hedge_ratio": 0, "avg_negation_ratio": 0,
+                "top_words": [], "top_signals": [], "date_range": []
             })
             continue
 
@@ -305,8 +306,8 @@ def synthesis():
 
         entry_count = len(rows)
         total_entries += entry_count
-        valences, intensities = [], []
-        theme_counts, distortion_counts = {}, {}
+        hedge_ratios, negation_ratios = [], []
+        word_counts, signal_counts = {}, {}
         dates = []
 
         for r in rows:
@@ -317,22 +318,23 @@ def synthesis():
                 ds = json.loads(r["derived_state"])
             except (json.JSONDecodeError, TypeError):
                 continue
-            v = ds.get("affect_valence")
-            i = ds.get("affect_intensity")
-            if isinstance(v, (int, float)):
-                valences.append(float(v))
-            if isinstance(i, (int, float)):
-                intensities.append(float(i))
-            for tag in (ds.get("theme_tags") or []):
-                tag = tag.strip().lower()
-                if tag:
-                    theme_counts[tag] = theme_counts.get(tag, 0) + 1
-                    all_theme_map.setdefault(tag, {})[c["name"]] = all_theme_map.get(tag, {}).get(c["name"], 0) + 1
-            for flag in (ds.get("distortion_flags") or []):
-                flag = flag.strip().lower()
-                if flag:
-                    distortion_counts[flag] = distortion_counts.get(flag, 0) + 1
-                    all_distort_map.setdefault(flag, {})[c["name"]] = all_distort_map.get(flag, {}).get(c["name"], 0) + 1
+            wc = ds.get("word_count") or 1
+            hc = ds.get("hedge_count")
+            nc = ds.get("negation_count")
+            if isinstance(hc, (int, float)):
+                hedge_ratios.append(float(hc) / max(int(wc), 1))
+            if isinstance(nc, (int, float)):
+                negation_ratios.append(float(nc) / max(int(wc), 1))
+            for word in (ds.get("high_frequency_words") or []):
+                word = word.strip()
+                if word:
+                    word_counts[word] = word_counts.get(word, 0) + 1
+                    all_word_map.setdefault(word, {})[c["name"]] = all_word_map.get(word, {}).get(c["name"], 0) + 1
+            for sig in (ds.get("syntactic_signals") or []):
+                sig = sig.strip()
+                if sig:
+                    signal_counts[sig] = signal_counts.get(sig, 0) + 1
+                    all_signal_map.setdefault(sig, {})[c["name"]] = all_signal_map.get(sig, {}).get(c["name"], 0) + 1
             for d in dates:
                 all_dates_map.setdefault(d, set()).add(c["name"])
 
@@ -343,35 +345,35 @@ def synthesis():
             except (json.JSONDecodeError, TypeError):
                 pass
 
-        avg_v = round(sum(valences) / len(valences), 3) if valences else 0
-        avg_i = round(sum(intensities) / len(intensities), 3) if intensities else 0
-        top_themes = [t for t, _ in sorted(theme_counts.items(), key=lambda x: -x[1])[:5]]
-        top_distortions = [f for f, _ in sorted(distortion_counts.items(), key=lambda x: -x[1])[:5]]
+        avg_h = round(sum(hedge_ratios) / len(hedge_ratios), 4) if hedge_ratios else 0
+        avg_n = round(sum(negation_ratios) / len(negation_ratios), 4) if negation_ratios else 0
+        top_words = [w for w, _ in sorted(word_counts.items(), key=lambda x: -x[1])[:5]]
+        top_signals = [s for s, _ in sorted(signal_counts.items(), key=lambda x: -x[1])[:5]]
         date_range = [dates[0], dates[-1]] if dates else []
 
         container_data.append({
             "id": c["id"], "name": c["name"], "entry_count": entry_count,
-            "patterns": patterns, "avg_valence": avg_v, "avg_intensity": avg_i,
-            "top_themes": top_themes, "top_distortions": top_distortions,
+            "patterns": patterns, "avg_hedge_ratio": avg_h, "avg_negation_ratio": avg_n,
+            "top_words": top_words, "top_signals": top_signals,
             "date_range": date_range
         })
 
     # Cross-container intersections
-    shared_themes = []
-    for tag, cmap in all_theme_map.items():
+    shared_words = []
+    for word, cmap in all_word_map.items():
         if len(cmap) >= 2:
             containers_list = sorted(cmap.keys())
             counts = [cmap[cn] for cn in containers_list]
-            shared_themes.append({"tag": tag, "containers": containers_list, "counts": counts})
-    shared_themes.sort(key=lambda x: -sum(x["counts"]))
+            shared_words.append({"word": word, "containers": containers_list, "counts": counts})
+    shared_words.sort(key=lambda x: -sum(x["counts"]))
 
-    shared_distortions = []
-    for flag, cmap in all_distort_map.items():
+    shared_signals = []
+    for sig, cmap in all_signal_map.items():
         if len(cmap) >= 2:
             containers_list = sorted(cmap.keys())
             counts = [cmap[cn] for cn in containers_list]
-            shared_distortions.append({"flag": flag, "containers": containers_list, "counts": counts})
-    shared_distortions.sort(key=lambda x: -sum(x["counts"]))
+            shared_signals.append({"signal": sig, "containers": containers_list, "counts": counts})
+    shared_signals.sort(key=lambda x: -sum(x["counts"]))
 
     temporal_overlaps = []
     for date, cnames in sorted(all_dates_map.items()):
@@ -383,8 +385,8 @@ def synthesis():
         "containers": container_data,
         "cross": {
             "total_entries": total_entries,
-            "shared_themes": shared_themes[:20],
-            "shared_distortions": shared_distortions[:10],
+            "shared_words": shared_words[:20],
+            "shared_signals": shared_signals[:10],
             "temporal_overlaps": temporal_overlaps[-20:]
         }
     })
@@ -970,14 +972,14 @@ def _build_query_context(db, container, uid_val):
         if e["derived"]:
             ds = e["derived"]
             meta_parts = []
-            if ds.get("affect_valence") is not None:
-                meta_parts.append(f"v:{ds['affect_valence']}")
-            if ds.get("affect_intensity") is not None:
-                meta_parts.append(f"i:{ds['affect_intensity']}")
-            if ds.get("theme_tags"):
-                meta_parts.append(f"主题:{','.join(ds['theme_tags'][:5])}")
-            if ds.get("distortion_flags"):
-                meta_parts.append(f"扭曲:{','.join(ds['distortion_flags'][:3])}")
+            if ds.get("hedge_count") is not None:
+                meta_parts.append(f"软化词:{ds['hedge_count']}")
+            if ds.get("negation_count") is not None:
+                meta_parts.append(f"否定词:{ds['negation_count']}")
+            if ds.get("syntactic_signals"):
+                meta_parts.append(f"信号:{','.join(ds['syntactic_signals'][:3])}")
+            if ds.get("high_frequency_words"):
+                meta_parts.append(f"高频词:{','.join(ds['high_frequency_words'][:5])}")
             if ds.get("salience_markers"):
                 meta_parts.append(f"显著:{','.join(ds['salience_markers'][:3])}")
             if meta_parts:

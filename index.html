@@ -483,34 +483,22 @@ window.addEventListener('resize', () => {
 });
 
 // === Helpers ===
-function affectColor(v,i) {
-  const hue = v<0 ? 210+v*30 : 40+v*20;
-  return `hsl(${hue}, ${20+i*60}%, ${30+i*25}%)`;
-}
 function renderDerived(dj) {
   if(!dj) return '';
   try {
     const ds = typeof dj==='string' ? JSON.parse(dj) : dj;
     if(!ds||typeof ds!=='object') return '';
     let h='<div class="derived-bar">';
-    if(ds.affect_valence!=null&&ds.affect_intensity!=null) {
-      const c=affectColor(ds.affect_valence,ds.affect_intensity);
-      const vl=ds.affect_valence>0.3?'+':ds.affect_valence<-0.3?'−':'·';
-      h+=`<span class="affect-dot" style="background:${c}" title="v:${ds.affect_valence.toFixed(2)} i:${ds.affect_intensity.toFixed(2)}"></span>`;
-      h+=`<span class="affect-label">${vl}${Math.abs(ds.affect_valence).toFixed(1)} · i${ds.affect_intensity.toFixed(1)}</span>`;
-    }
-    if(ds.theme_tags?.length) h+=ds.theme_tags.map(t=>`<span class="theme-tag">${esc(t)}</span>`).join('');
-    if(ds.distortion_flags?.length) h+=ds.distortion_flags.map(d=>`<span class="distortion-tag">${esc(d)}</span>`).join('');
+    if(ds.syntactic_signals?.length) h+=ds.syntactic_signals.map(s=>`<span class="theme-tag">${esc(s)}</span>`).join('');
+    if(ds.high_frequency_words?.length) h+=ds.high_frequency_words.slice(0,4).map(w=>`<span class="salience-tag" style="font-size:9px;padding:1px 5px">${esc(w)}</span>`).join('');
     h+='</div>'; return h;
   } catch(e){return '';}
 }
 function renderMiniDerived(ds) {
   if(!ds) return '';
   let h='';
-  if(ds.affect_valence!=null&&ds.affect_intensity!=null) {
-    h+=`<span class="affect-dot" style="background:${affectColor(ds.affect_valence,ds.affect_intensity)}"></span>`;
-  }
-  if(ds.theme_tags?.length) h+=ds.theme_tags.slice(0,3).map(t=>`<span class="theme-tag">${esc(t)}</span>`).join('');
+  if(ds.syntactic_signals?.length) h+=ds.syntactic_signals.slice(0,2).map(s=>`<span class="theme-tag">${esc(s)}</span>`).join('');
+  if(ds.high_frequency_words?.length) h+=ds.high_frequency_words.slice(0,2).map(w=>`<span class="theme-tag">${esc(w)}</span>`).join('');
   return h;
 }
 
@@ -669,54 +657,52 @@ function renderDashboard(t) {
   let h = '';
 
   // Stats row
-  const vSign = t.avg_valence > 0.1 ? '+' : t.avg_valence < -0.1 ? '' : '';
   h += `<div class="dash-stats">
     <div class="dash-stat"><div class="val">${t.total_entries}</div><div class="lbl">总条目</div></div>
-    <div class="dash-stat"><div class="val">${vSign}${t.avg_valence.toFixed(2)}</div><div class="lbl">平均效价</div></div>
-    <div class="dash-stat"><div class="val">${t.avg_intensity.toFixed(2)}</div><div class="lbl">平均强度</div></div>
-    <div class="dash-stat"><div class="val">${t.theme_freq.length}</div><div class="lbl">主题数</div></div>
+    <div class="dash-stat"><div class="val">${(t.avg_hedge_ratio * 100).toFixed(1)}%</div><div class="lbl">软化词比</div></div>
+    <div class="dash-stat"><div class="val">${(t.avg_negation_ratio * 100).toFixed(1)}%</div><div class="lbl">否定词比</div></div>
+    <div class="dash-stat"><div class="val">${t.signal_freq.length}</div><div class="lbl">信号种类</div></div>
   </div>`;
 
-  // Affect timeline
-  if (t.affect_timeline.length >= 2) {
+  // Language signal timeline
+  if (t.language_timeline.length >= 2) {
     h += `<div class="dash-section">
-      <div class="dash-section-title">情绪轨迹</div>
-      <div class="affect-chart">${buildAffectSVG(t.affect_timeline)}</div>
+      <div class="dash-section-title">语言信号轨迹</div>
+      <div class="affect-chart">${buildLanguageSVG(t.language_timeline)}</div>
       <div class="affect-legend">
-        <span><span class="dot" style="background:var(--accdim)"></span> 效价 (valence)</span>
-        <span><span class="dot" style="background:var(--vent)"></span> 强度 (intensity)</span>
+        <span><span class="dot" style="background:var(--accdim)"></span> 软化词比</span>
+        <span><span class="dot" style="background:var(--vent)"></span> 否定词比</span>
       </div>
     </div>`;
-  } else if (t.affect_timeline.length === 1) {
-    const pt = t.affect_timeline[0];
+  } else if (t.language_timeline.length === 1) {
+    const pt = t.language_timeline[0];
     h += `<div class="dash-section">
-      <div class="dash-section-title">情绪轨迹</div>
+      <div class="dash-section-title">语言信号轨迹</div>
       <div style="padding:20px;text-align:center;color:var(--muted);font-size:12px">
-        <span class="affect-dot" style="width:14px;height:14px;background:${affectColor(pt.valence, pt.intensity)}"></span>
-        <span style="margin-left:8px;font-family:var(--mono)">v:${pt.valence.toFixed(2)} i:${pt.intensity.toFixed(2)}</span>
+        <span style="font-family:var(--mono)">软化词比: ${(pt.hedge_ratio*100).toFixed(1)}% · 否定词比: ${(pt.negation_ratio*100).toFixed(1)}%</span>
         <br><span style="font-size:11px;margin-top:4px;display:inline-block">需要更多条目以绘制轨迹</span>
       </div>
     </div>`;
   }
 
-  // Theme frequency
-  if (t.theme_freq.length) {
-    const maxC = t.theme_freq[0].count;
-    h += `<div class="dash-section"><div class="dash-section-title">主题分布</div><div class="bar-chart">`;
-    for (const tf of t.theme_freq) {
-      const pct = Math.max((tf.count / maxC) * 100, 4);
-      h += `<div class="bar-row"><span class="bar-label">${esc(tf.tag)}</span><div class="bar-track"><div class="bar-fill theme" style="width:${pct}%"></div></div><span class="bar-count">${tf.count}</span></div>`;
+  // High-frequency word distribution
+  if (t.word_freq.length) {
+    const maxC = t.word_freq[0].count;
+    h += `<div class="dash-section"><div class="dash-section-title">高频词分布</div><div class="bar-chart">`;
+    for (const wf of t.word_freq) {
+      const pct = Math.max((wf.count / maxC) * 100, 4);
+      h += `<div class="bar-row"><span class="bar-label">${esc(wf.word)}</span><div class="bar-track"><div class="bar-fill theme" style="width:${pct}%"></div></div><span class="bar-count">${wf.count}</span></div>`;
     }
     h += '</div></div>';
   }
 
-  // Distortion frequency
-  if (t.distortion_freq.length) {
-    const maxD = t.distortion_freq[0].count;
-    h += `<div class="dash-section"><div class="dash-section-title">认知扭曲频率</div><div class="bar-chart">`;
-    for (const df of t.distortion_freq) {
-      const pct = Math.max((df.count / maxD) * 100, 4);
-      h += `<div class="bar-row"><span class="bar-label">${esc(df.flag)}</span><div class="bar-track"><div class="bar-fill distortion" style="width:${pct}%"></div></div><span class="bar-count">${df.count}</span></div>`;
+  // Syntactic signal frequency
+  if (t.signal_freq.length) {
+    const maxS = t.signal_freq[0].count;
+    h += `<div class="dash-section"><div class="dash-section-title">句法信号频率</div><div class="bar-chart">`;
+    for (const sf of t.signal_freq) {
+      const pct = Math.max((sf.count / maxS) * 100, 4);
+      h += `<div class="bar-row"><span class="bar-label">${esc(sf.signal)}</span><div class="bar-track"><div class="bar-fill distortion" style="width:${pct}%"></div></div><span class="bar-count">${sf.count}</span></div>`;
     }
     h += '</div></div>';
   }
@@ -744,7 +730,7 @@ function renderDashboard(t) {
   dc.innerHTML = h;
 }
 
-function buildAffectSVG(timeline) {
+function buildLanguageSVG(timeline) {
   const W = 560, H = 160, PAD = 30, PADT = 10, PADR = 10;
   const n = timeline.length;
   const chartW = W - PAD - PADR, chartH = H - PADT - PAD;
@@ -752,38 +738,38 @@ function buildAffectSVG(timeline) {
   // X positions evenly spaced
   const xs = timeline.map((_, i) => PAD + (i / Math.max(n-1, 1)) * chartW);
 
-  // Valence: -1 to 1 → top to bottom
-  const vy = (v) => PADT + (1 - (v + 1) / 2) * chartH;
-  // Intensity: 0 to 1 → bottom to top
-  const iy = (v) => PADT + (1 - v) * chartH;
+  // Both hedge_ratio and negation_ratio are [0, 1] → top to bottom inverted
+  const ry = (v) => PADT + (1 - v) * chartH;
+
+  // Dynamic max for y-axis labels
+  const allVals = timeline.flatMap(p => [p.hedge_ratio, p.negation_ratio]);
+  const dataMax = Math.max(...allVals, 0.05);
+  const axisMax = Math.ceil(dataMax * 20) / 20; // round up to nearest 5%
+  const gridLines = [0, axisMax * 0.25, axisMax * 0.5, axisMax * 0.75, axisMax];
+  const normY = (v) => PADT + (1 - v / axisMax) * chartH;
 
   let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
 
   // Grid lines
-  const gridLines = [-1, -0.5, 0, 0.5, 1];
   for (const gl of gridLines) {
-    const y = vy(gl);
+    const y = normY(gl);
     svg += `<line x1="${PAD}" y1="${y}" x2="${W-PADR}" y2="${y}" stroke="#1e1e26" stroke-width="1"/>`;
-    svg += `<text x="${PAD-4}" y="${y+3}" fill="#3a3a46" font-size="9" font-family="IBM Plex Mono,monospace" text-anchor="end">${gl > 0 ? '+' : ''}${gl}</text>`;
+    svg += `<text x="${PAD-4}" y="${y+3}" fill="#3a3a46" font-size="9" font-family="IBM Plex Mono,monospace" text-anchor="end">${(gl*100).toFixed(0)}%</text>`;
   }
 
-  // Zero line emphasis
-  svg += `<line x1="${PAD}" y1="${vy(0)}" x2="${W-PADR}" y2="${vy(0)}" stroke="#2a2a36" stroke-width="1" stroke-dasharray="4,3"/>`;
+  // Hedge ratio line
+  let hPath = `M ${xs[0]} ${normY(timeline[0].hedge_ratio)}`;
+  for (let i = 1; i < n; i++) hPath += ` L ${xs[i]} ${normY(timeline[i].hedge_ratio)}`;
+  svg += `<path d="${hPath}" fill="none" stroke="#5a5080" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
 
-  // Valence line
-  let vPath = `M ${xs[0]} ${vy(timeline[0].valence)}`;
-  for (let i = 1; i < n; i++) vPath += ` L ${xs[i]} ${vy(timeline[i].valence)}`;
-  svg += `<path d="${vPath}" fill="none" stroke="#5a5080" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+  // Negation ratio line
+  let nPath = `M ${xs[0]} ${normY(timeline[0].negation_ratio)}`;
+  for (let i = 1; i < n; i++) nPath += ` L ${xs[i]} ${normY(timeline[i].negation_ratio)}`;
+  svg += `<path d="${nPath}" fill="none" stroke="#6b8f71" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4,3"/>`;
 
-  // Intensity line
-  let iPath = `M ${xs[0]} ${iy(timeline[0].intensity)}`;
-  for (let i = 1; i < n; i++) iPath += ` L ${xs[i]} ${iy(timeline[i].intensity)}`;
-  svg += `<path d="${iPath}" fill="none" stroke="#6b8f71" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4,3"/>`;
-
-  // Dots
+  // Dots (hedge ratio)
   for (let i = 0; i < n; i++) {
-    const c = affectColor(timeline[i].valence, timeline[i].intensity);
-    svg += `<circle cx="${xs[i]}" cy="${vy(timeline[i].valence)}" r="4" fill="${c}" stroke="#08080a" stroke-width="1.5"/>`;
+    svg += `<circle cx="${xs[i]}" cy="${normY(timeline[i].hedge_ratio)}" r="4" fill="var(--accdim)" stroke="#08080a" stroke-width="1.5"/>`;
   }
 
   // Date labels (first, mid, last)
@@ -976,62 +962,59 @@ function renderSynthesis(data) {
   h += '<div class="synth-section"><div class="synth-section-title">容器概览</div><div class="synth-cards">';
   data.containers.forEach((c, i) => {
     const hueClass = `c-hue-${i % 6}`;
-    const vSign = c.avg_valence > 0.1 ? '+' : c.avg_valence < -0.1 ? '' : '';
     h += `<div class="synth-card">
       <div class="sc-name ${hueClass}">${esc(c.name)}</div>
       <div class="sc-stats">
         <div class="sc-stat"><span class="sv">${c.entry_count}</span> 条</div>
-        <div class="sc-stat">v <span class="sv">${vSign}${c.avg_valence.toFixed(2)}</span></div>
-        <div class="sc-stat">i <span class="sv">${c.avg_intensity.toFixed(2)}</span></div>
+        <div class="sc-stat">软化 <span class="sv">${(c.avg_hedge_ratio * 100).toFixed(1)}%</span></div>
+        <div class="sc-stat">否定 <span class="sv">${(c.avg_negation_ratio * 100).toFixed(1)}%</span></div>
       </div>
-      ${c.top_themes.length ? `<div class="sc-themes">${c.top_themes.map(t=>`<span>${esc(t)}</span>`).join('')}</div>` : ''}
+      ${c.top_words.length ? `<div class="sc-themes">${c.top_words.map(w=>`<span>${esc(w)}</span>`).join('')}</div>` : ''}
     </div>`;
   });
   h += '</div></div>';
 
-  // Shared themes bar chart
-  if (data.cross.shared_themes.length) {
-    h += '<div class="synth-section"><div class="synth-section-title">跨容器共享主题</div><div class="synth-shared">';
-    const maxTotal = Math.max(...data.cross.shared_themes.map(s => s.counts.reduce((a,b)=>a+b,0)));
-    for (const st of data.cross.shared_themes.slice(0, 10)) {
-      const total = st.counts.reduce((a,b)=>a+b,0);
+  // Shared high-frequency words bar chart
+  if (data.cross.shared_words.length) {
+    h += '<div class="synth-section"><div class="synth-section-title">跨容器共现高频词</div><div class="synth-shared">';
+    const maxTotal = Math.max(...data.cross.shared_words.map(s => s.counts.reduce((a,b)=>a+b,0)));
+    for (const sw of data.cross.shared_words.slice(0, 10)) {
       h += `<div class="synth-bar-row">
-        <span class="synth-bar-label">${esc(st.tag)}</span>
+        <span class="synth-bar-label">${esc(sw.word)}</span>
         <div class="synth-bar-segments">`;
-      st.containers.forEach((cn, ci) => {
-        const pct = (st.counts[ci] / maxTotal) * 100;
+      sw.containers.forEach((cn, ci) => {
+        const pct = (sw.counts[ci] / maxTotal) * 100;
         const cIdx = data.containers.findIndex(c => c.name === cn);
         const color = CONTAINER_HUES[cIdx % 6] || CONTAINER_HUES[0];
-        h += `<div class="synth-bar-seg" style="width:${Math.max(pct,3)}%;background:${color}" title="${cn}: ${st.counts[ci]}"></div>`;
+        h += `<div class="synth-bar-seg" style="width:${Math.max(pct,3)}%;background:${color}" title="${cn}: ${sw.counts[ci]}"></div>`;
       });
-      h += `</div><span class="synth-bar-containers">${st.containers.map(cn => {
+      h += `</div><span class="synth-bar-containers">${sw.containers.map(cn => {
         const cIdx = data.containers.findIndex(c => c.name === cn);
         const color = CONTAINER_HUES[cIdx % 6] || CONTAINER_HUES[0];
-        return `<span style="color:${color}">${st.counts[st.containers.indexOf(cn)]}</span>`;
+        return `<span style="color:${color}">${sw.counts[sw.containers.indexOf(cn)]}</span>`;
       }).join(' ')}</span></div>`;
     }
     h += '</div></div>';
   }
 
-  // Shared distortions
-  if (data.cross.shared_distortions.length) {
-    h += '<div class="synth-section"><div class="synth-section-title">跨容器共享认知扭曲</div><div class="synth-shared">';
-    const maxD = Math.max(...data.cross.shared_distortions.map(s => s.counts.reduce((a,b)=>a+b,0)));
-    for (const sd of data.cross.shared_distortions.slice(0, 8)) {
-      const total = sd.counts.reduce((a,b)=>a+b,0);
+  // Shared syntactic signals
+  if (data.cross.shared_signals.length) {
+    h += '<div class="synth-section"><div class="synth-section-title">跨容器共现句法信号</div><div class="synth-shared">';
+    const maxS = Math.max(...data.cross.shared_signals.map(s => s.counts.reduce((a,b)=>a+b,0)));
+    for (const ss of data.cross.shared_signals.slice(0, 8)) {
       h += `<div class="synth-bar-row">
-        <span class="synth-bar-label">${esc(sd.flag)}</span>
+        <span class="synth-bar-label">${esc(ss.signal)}</span>
         <div class="synth-bar-segments">`;
-      sd.containers.forEach((cn, ci) => {
-        const pct = (sd.counts[ci] / maxD) * 100;
+      ss.containers.forEach((cn, ci) => {
+        const pct = (ss.counts[ci] / maxS) * 100;
         const cIdx = data.containers.findIndex(c => c.name === cn);
         const color = CONTAINER_HUES[cIdx % 6] || CONTAINER_HUES[0];
-        h += `<div class="synth-bar-seg" style="width:${Math.max(pct,3)}%;background:${color};opacity:0.7" title="${cn}: ${sd.counts[ci]}"></div>`;
+        h += `<div class="synth-bar-seg" style="width:${Math.max(pct,3)}%;background:${color};opacity:0.7" title="${cn}: ${ss.counts[ci]}"></div>`;
       });
-      h += `</div><span class="synth-bar-containers">${sd.containers.map(cn => {
+      h += `</div><span class="synth-bar-containers">${ss.containers.map(cn => {
         const cIdx = data.containers.findIndex(c => c.name === cn);
         const color = CONTAINER_HUES[cIdx % 6] || CONTAINER_HUES[0];
-        return `<span style="color:${color}">${sd.counts[sd.containers.indexOf(cn)]}</span>`;
+        return `<span style="color:${color}">${ss.counts[ss.containers.indexOf(cn)]}</span>`;
       }).join(' ')}</span></div>`;
     }
     h += '</div></div>';
