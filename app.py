@@ -830,6 +830,9 @@ def observe(tid):
                 pay = dec[6:]
                 if pay == "[DONE]":
                     observation = "".join(content).strip()
+                    if not observation:
+                        yield f"data: {json.dumps({'type':'error','text':'模型未返回响应，请重试。'})}\n\n"
+                        break
                     last_user_mid = None
                     for m in reversed(msgs):
                         if m["role"] == "user": last_user_mid = m["id"]; break
