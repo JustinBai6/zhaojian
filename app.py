@@ -592,9 +592,9 @@ def create_thread(cid):
     title = text[:40] + ("..." if len(text) > 40 else "")
     db = get_db()
     db.execute("INSERT INTO threads VALUES (?,?,?,?,?,?,?)", (tid, cid, uid(), title, ttype, now, now))
-    db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "user", text, None, None, now, None, ttype))
+    db.execute("INSERT INTO messages (id,thread_id,role,content,thinking,skills_used,timestamp,derived_state,msg_type) VALUES (?,?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "user", text, None, None, now, None, ttype))
     if ttype == "vent":
-        db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "assistant", "已记录。", None, None, now, None, "vent"))
+        db.execute("INSERT INTO messages (id,thread_id,role,content,thinking,skills_used,timestamp,derived_state,msg_type) VALUES (?,?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "assistant", "已记录。", None, None, now, None, "vent"))
         db.commit(); db.close(); return jsonify({"thread_id": tid, "stream": False})
     db.commit(); db.close()
     return jsonify({"thread_id": tid, "stream": True})
@@ -647,10 +647,10 @@ def reply(tid):
     msg_type = d.get("type", "reflect")
     t = db.execute("SELECT * FROM threads WHERE id=? AND user_id=?", (tid, uid())).fetchone()
     if not t: db.close(); return jsonify({"error": "Not found"}), 404
-    db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "user", d["text"], None, None, now, None, msg_type))
+    db.execute("INSERT INTO messages (id,thread_id,role,content,thinking,skills_used,timestamp,derived_state,msg_type) VALUES (?,?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "user", d["text"], None, None, now, None, msg_type))
     db.execute("UPDATE threads SET updated=? WHERE id=?", (now, tid))
     if msg_type == "vent":
-        db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "assistant", "已记录。", None, None, now, None, "vent"))
+        db.execute("INSERT INTO messages (id,thread_id,role,content,thinking,skills_used,timestamp,derived_state,msg_type) VALUES (?,?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "assistant", "已记录。", None, None, now, None, "vent"))
         db.commit(); db.close()
         return jsonify({"stream": False})
     db.commit(); db.close()
@@ -713,7 +713,7 @@ def observe(tid):
                     if pay == "[DONE]":
                         full_content = "".join(content).strip()
                         sdb = get_db()
-                        sdb.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?,?)",
+                        sdb.execute("INSERT INTO messages (id,thread_id,role,content,thinking,skills_used,timestamp,derived_state,msg_type) VALUES (?,?,?,?,?,?,?,?,?)",
                             (uuid.uuid4().hex[:8], tid, "assistant", full_content, "".join(think), json.dumps(["query"]), datetime.now().isoformat(), None, "query"))
                         sdb.execute("UPDATE threads SET updated=? WHERE id=?", (datetime.now().isoformat(), tid))
                         sdb.commit(); sdb.close()
@@ -862,7 +862,7 @@ def observe(tid):
                     for m in reversed(msgs):
                         if m["role"] == "user": last_user_mid = m["id"]; break
                     sdb = get_db()
-                    sdb.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?,?)",
+                    sdb.execute("INSERT INTO messages (id,thread_id,role,content,thinking,skills_used,timestamp,derived_state,msg_type) VALUES (?,?,?,?,?,?,?,?,?)",
                         (uuid.uuid4().hex[:8], tid, "assistant", observation, "".join(think), json.dumps(skill_ids), datetime.now().isoformat(), None, "reflect"))
                     sdb.execute("UPDATE threads SET updated=? WHERE id=?", (datetime.now().isoformat(), tid))
                     if patterns_json: sdb.execute("UPDATE containers SET patterns=? WHERE id=?", (patterns_json, t["container_id"]))
