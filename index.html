@@ -626,7 +626,7 @@ function renderMessages(){
     const bodyClass=mt==='vent'?'vent-text':mt==='query'?'query-text':'ai-text';
     const roleLabel=mt==='query'?'检索':mt==='vent'?'':'照鉴';
     if(mt==='vent') return `<div class="msg"><div class="msg-head"><span class="msg-role assistant">照鉴</span><span class="msg-time">${time}</span></div><div class="msg-body vent-text">${esc(m.content)}</div></div>`;
-    return `<div class="msg"><div class="msg-head"><span class="msg-role assistant">${roleLabel}</span><span class="msg-time">${time}</span></div><div class="msg-body ${bodyClass}">${esc(m.content)}</div>${renderSkillTags(m.skills_used)}${m.thinking?`<button class="think-toggle" onclick="togThink(this)">› 思考过程</button><div class="think-box">${esc(m.thinking)}</div>`:''}</div>`;
+    return `<div class="msg"><div class="msg-head"><span class="msg-role assistant">${roleLabel}</span><span class="msg-time">${time}</span></div><div class="msg-body ${bodyClass}">${esc(m.content)}</div>${renderSkillTags(m.skills_used)}</div>`;
   }).join('')+'<div id="streamArea"></div>';
   scrollBot();
 }
@@ -937,7 +937,7 @@ async function stream(tid){
   const area=document.getElementById('streamArea');
   const isQ=S.type==='query';
   const borderColor=isQ?'var(--query)':'var(--accdim)';
-  area.innerHTML=`<div class="stream-block"><div class="stream-skills" id="sSkills"></div><div class="stream-phase" id="sPhase">思考中...</div><div class="stream-think" id="sThink"></div><div class="stream-content" id="sCont" style="display:none;border-left-color:${borderColor}"></div><div class="stream-derived" id="sDerived"></div></div>`;
+  area.innerHTML=`<div class="stream-block"><div class="stream-skills" id="sSkills"></div><div class="stream-phase" id="sPhase">思考中...</div><div class="stream-content" id="sCont" style="display:none;border-left-color:${borderColor}"></div><div class="stream-derived" id="sDerived"></div></div>`;
   scrollBot();
   const body = {
     pinned_context_id: S.pinnedContextId || null,
@@ -954,7 +954,7 @@ async function stream(tid){
           try{
             const d=JSON.parse(ln.slice(6));
             if(d.type==='skills'){document.getElementById('sSkills').innerHTML=d.skills.map(s=>`<span class="skill-tag">${SKILL_NAMES[s]||s}</span>`).join('');}
-            if(d.type==='thinking'){const e=document.getElementById('sThink');e.textContent+=d.text;e.scrollTop=e.scrollHeight;scrollBot();}
+            if(d.type==='thinking'){/* thinking hidden */}
             if(d.type==='content'){if(!hasCont){hasCont=true;document.getElementById('sPhase').textContent=isQ?'检索':'观察';document.getElementById('sThink').style.display='none';document.getElementById('sCont').style.display='block';}document.getElementById('sCont').textContent+=d.text;scrollBot();}
             if(d.type==='derived'){document.getElementById('sDerived').innerHTML=renderDerived(d.data);}
             if(d.type==='context'){showContextWindow(d.data);}
@@ -1120,7 +1120,7 @@ async function runSynthesisAnalysis() {
   const btn = document.getElementById('synthGenBtn');
   btn.disabled = true;
   const area = document.getElementById('synthAnalyzeArea');
-  area.innerHTML = `<div class="synth-stream-phase" id="synthPhase">思考中...</div><div class="synth-stream-think" id="synthThink"></div><div class="synth-stream-content" id="synthCont" style="display:none"></div>`;
+  area.innerHTML = `<div class="synth-stream-phase" id="synthPhase">思考中...</div><div class="synth-stream-content" id="synthCont" style="display:none"></div>`;
 
   try {
     const resp = await fetch('/api/synthesis/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
@@ -1139,11 +1139,7 @@ async function runSynthesisAnalysis() {
         if(!ln.startsWith('data: ')) continue;
         try {
           const d = JSON.parse(ln.slice(6));
-          if(d.type === 'thinking') {
-            const e = document.getElementById('synthThink');
-            e.textContent += d.text;
-            e.scrollTop = e.scrollHeight;
-          }
+          if(d.type === 'thinking') {/* thinking hidden */}
           if(d.type === 'content') {
             if(!hasCont) {
               hasCont = true;
