@@ -11,7 +11,7 @@ from functools import wraps
 from flask import Flask, request, Response, send_file, jsonify, session
 import requests as http_requests
 
-from skills import select_skills, build_system_prompt, build_query_prompt, build_synthesis_prompt, SKILLS, _count_matches, HEDGE_PATTERNS, COUNTABLE_PATTERNS
+from skills import select_skills, build_system_prompt, build_query_prompt, build_synthesis_prompt, build_extraction_prompt, SKILLS, _count_matches, HEDGE_PATTERNS, COUNTABLE_PATTERNS
 
 # Negation words for server-side text analysis
 _NEGATION_PATTERNS = [r"不[^，。？！\s]{0,4}", r"没有?", r"无法", r"别", r"勿", r"未"]
@@ -24,7 +24,6 @@ db_dir = os.environ.get("DB_DIR", Path(__file__).parent)
 DB_PATH = Path(db_dir) / "zhaojian.db"
 INVITE_CODE = os.environ.get("ZHAOJIAN_INVITE", "zhaojian2026")
 SHARED_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
-CONTEXT_ID_MK = "---CONTEXT_ID---"
 
 def get_db():
     db = sqlite3.connect(str(DB_PATH))
@@ -738,7 +737,6 @@ def observe(tid):
     # === Reflect mode (existing logic) ===
     context_block = None
     pinned_context_info = None
-    auto_context_threads = None
 
     # Entry-level pins take priority
     if pinned_entry_ids:
@@ -779,31 +777,7 @@ def observe(tid):
             )
             pinned_context_info = {"type": "thread", "thread_id": pinned_context_id, "title": ctx_thread["title"], "preview": user_content[:80], "auto": False}
     else:
-        same_container = db.execute(
-            "SELECT t.id, t.title, t.container_id, c.name as container_name, t.created "
-            "FROM threads t JOIN containers c ON c.id = t.container_id "
-            "WHERE t.container_id=? AND t.id!=? AND t.user_id=? ORDER BY t.updated DESC LIMIT 10",
-            (t["container_id"], tid, uid())).fetchall()
-        other_threads = []
-        if len(same_container) < 10:
-            needed = 10 - len(same_container)
-            same_ids = [r["id"] for r in same_container] + [tid]
-            placeholders = ",".join("?" * len(same_ids))
-            other_threads = db.execute(
-                f"SELECT t.id, t.title, t.container_id, c.name as container_name, t.created "
-                f"FROM threads t JOIN containers c ON c.id = t.container_id "
-                f"WHERE t.container_id!=? AND t.user_id=? AND t.id NOT IN ({placeholders}) ORDER BY t.updated DESC LIMIT ?",
-                [t["container_id"], uid()] + same_ids + [needed]).fetchall()
-        all_ctx_threads = list(same_container) + list(other_threads)
-        summaries = []
-        for ct in all_ctx_threads[:10]:
-            first_user = db.execute("SELECT content FROM messages WHERE thread_id=? AND role='user' ORDER BY timestamp ASC LIMIT 1", (ct["id"],)).fetchone()
-            preview = first_user["content"][:50] if first_user else ""
-            summaries.append({"id": ct["id"], "container_name": ct["container_name"], "date": ct["created"][:10], "title": ct["title"], "preview": preview})
-        if summaries:
-            lines = "\n".join(f"[ID:{s['id']}] [{s['container_name']}] {s['date']}: {s['title']} — {s['preview']}" for s in summaries)
-            context_block = f"\n=== 可选参照记录 ===\n{lines}\n=== 选择说明 ===\n在输出末尾附加 {CONTEXT_ID_MK} 换行后写入最相关记录的ID（仅ID），若无相关则写 none。\n"
-            auto_context_threads = {s["id"]: s for s in summaries}
+        pass  # no auto-context; container patterns provide cross-entry continuity
 
     # Cross-container pattern injection
     cross_container_block = None
@@ -829,6 +803,7 @@ def observe(tid):
 
     user_texts = [m["content"] for m in msgs if m["role"] == "user"]
     all_user_text = "\n".join(user_texts)
+    last_user_text = user_texts[-1] if user_texts else ""
     selected = select_skills(text=all_user_text, has_cross_thread_context=container_patterns is not None, has_cross_container_context=has_cross_container_ctx, max_skills=3)
     skill_ids = [s.id for s in selected]
     system_prompt = build_system_prompt(selected)
@@ -848,54 +823,48 @@ def observe(tid):
             if pinned_context_info:
                 yield f"data: {json.dumps({'type':'context','data':pinned_context_info})}\n\n"
             think, content = [], []
-            patterns_started = False; derived_started = False; content_buffer = ""
-            PATTERNS_MK = "---PATTERNS---"; DERIVED_MK = "---DERIVED---"
             for line in resp.iter_lines():
                 if not line: continue
                 dec = line.decode("utf-8")
                 if not dec.startswith("data: "): continue
                 pay = dec[6:]
                 if pay == "[DONE]":
-                    full_content = "".join(content)
-                    observation, patterns_json, derived_json, ctx_id = _split_output(full_content)
+                    observation = "".join(content).strip()
                     last_user_mid = None
                     for m in reversed(msgs):
                         if m["role"] == "user": last_user_mid = m["id"]; break
+                    # Save assistant message
                     sdb = get_db()
                     sdb.execute("INSERT INTO messages (id,thread_id,role,content,thinking,skills_used,timestamp,derived_state,msg_type) VALUES (?,?,?,?,?,?,?,?,?)",
-                        (uuid.uuid4().hex[:8], tid, "assistant", observation, "".join(think), json.dumps(skill_ids), datetime.now().isoformat(), None, "reflect"))
+                        (uuid.uuid4().hex[:8], tid, "assistant", observation, "".join(think),
+                         json.dumps(skill_ids), datetime.now().isoformat(), None, "reflect"))
                     sdb.execute("UPDATE threads SET updated=? WHERE id=?", (datetime.now().isoformat(), tid))
-                    if patterns_json: sdb.execute("UPDATE containers SET patterns=? WHERE id=?", (patterns_json, t["container_id"]))
-                    if derived_json and last_user_mid: sdb.execute("UPDATE messages SET derived_state=? WHERE id=?", (derived_json, last_user_mid))
                     sdb.commit(); sdb.close()
-                    if content_buffer and not patterns_started and not derived_started:
-                        yield f"data: {json.dumps({'type':'content','text':content_buffer})}\n\n"
+                    # Signal extraction phase to frontend
+                    yield f"data: {json.dumps({'type':'phase','text':'提取中...'})}\n\n"
+                    # Run extraction call (sequential, non-streaming)
+                    derived_json, patterns_json = _run_extraction(
+                        last_user_text, container, container_patterns, observation, api_key)
+                    # Save extracted data
+                    sdb = get_db()
+                    if patterns_json:
+                        sdb.execute("UPDATE containers SET patterns=? WHERE id=?", (patterns_json, t["container_id"]))
+                    if derived_json and last_user_mid:
+                        sdb.execute("UPDATE messages SET derived_state=? WHERE id=?", (derived_json, last_user_mid))
+                    sdb.commit(); sdb.close()
+                    # Emit derived state + done
                     if derived_json:
                         try: yield f"data: {json.dumps({'type':'derived','data':json.loads(derived_json)})}\n\n"
                         except json.JSONDecodeError: pass
-                    if auto_context_threads and ctx_id and ctx_id in auto_context_threads:
-                        ctx_s = auto_context_threads[ctx_id]
-                        yield f"data: {json.dumps({'type':'context','data':{'type':'thread','thread_id':ctx_id,'title':ctx_s['title'],'preview':ctx_s['preview'],'auto':True}})}\n\n"
-                    yield f"data: {json.dumps({'type':'done'})}\n\n"; break
+                    yield f"data: {json.dumps({'type':'done'})}\n\n"
+                    break
                 try:
                     ch = json.loads(pay); delta = ch.get("choices",[{}])[0].get("delta",{})
                     if rc := delta.get("reasoning_content"):
                         think.append(rc); yield f"data: {json.dumps({'type':'thinking','text':rc})}\n\n"
                     if ct := delta.get("content"):
                         content.append(ct)
-                        if derived_started or patterns_started:
-                            if patterns_started and not derived_started:
-                                content_buffer += ct
-                                if DERIVED_MK in content_buffer: derived_started = True; content_buffer = ""
-                            continue
-                        content_buffer += ct
-                        if PATTERNS_MK in content_buffer:
-                            before = content_buffer.split(PATTERNS_MK)[0]
-                            if before.strip(): yield f"data: {json.dumps({'type':'content','text':before.rstrip()})}\n\n"
-                            content_buffer = ""; patterns_started = True
-                        elif len(content_buffer) > 200:
-                            flush = content_buffer[:-20]; content_buffer = content_buffer[-20:]
-                            yield f"data: {json.dumps({'type':'content','text':flush})}\n\n"
+                        yield f"data: {json.dumps({'type':'content','text':ct})}\n\n"
                 except: pass
         except http_requests.exceptions.Timeout:
             yield f"data: {json.dumps({'type':'error','text':'Timeout'})}\n\n"
@@ -905,26 +874,6 @@ def observe(tid):
     return Response(generate(), mimetype="text/event-stream")
 
 
-def _split_output(content: str) -> tuple[str, str | None, str | None, str | None]:
-    PATTERNS_MK = "---PATTERNS---"; DERIVED_MK = "---DERIVED---"
-    observation = content.strip(); patterns_json = None; derived_json = None; context_id = None
-    def _extract_derived_and_context(der_part: str):
-        if CONTEXT_ID_MK in der_part:
-            der_str, ctx_str = der_part.split(CONTEXT_ID_MK, 1)
-            cid = ctx_str.strip()
-            return _clean_json(der_str.strip()), (None if cid == "none" else cid)
-        return _clean_json(der_part.strip()), None
-    if PATTERNS_MK in observation:
-        parts = observation.split(PATTERNS_MK, 1); observation = parts[0].strip(); remainder = parts[1].strip()
-        if DERIVED_MK in remainder:
-            pat_part, der_part = remainder.split(DERIVED_MK, 1)
-            patterns_json = _clean_json(pat_part.strip()); derived_json, context_id = _extract_derived_and_context(der_part)
-        else: patterns_json = _clean_json(remainder)
-    elif DERIVED_MK in observation:
-        parts = observation.split(DERIVED_MK, 1); observation = parts[0].strip()
-        derived_json, context_id = _extract_derived_and_context(parts[1])
-    return observation, patterns_json, derived_json, context_id
-
 def _clean_json(raw: str) -> str | None:
     if not raw: return None
     if raw.startswith("```"):
@@ -932,6 +881,40 @@ def _clean_json(raw: str) -> str | None:
         if raw.startswith("json"): raw = raw[4:].strip()
     try: json.loads(raw); return raw
     except json.JSONDecodeError: return None
+
+def _run_extraction(user_text: str, container, container_patterns, observation: str, api_key: str):
+    """Non-streaming extraction call. Returns (derived_json_str, patterns_json_str) or (None, None)."""
+    user_msg = f"[容器]: {container['name']}\n"
+    if container_patterns:
+        user_msg += f"[现有模式档案]: {container_patterns}\n"
+    user_msg += f"[日记文本]: {user_text}\n"
+    if observation:
+        user_msg += f"[本次观察]: {observation}\n"
+    try:
+        resp = http_requests.post(
+            "https://api.deepseek.com/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "model": "deepseek-reasoner",
+                "messages": [
+                    {"role": "system", "content": build_extraction_prompt()},
+                    {"role": "user", "content": user_msg},
+                ],
+                "stream": False,
+            },
+            timeout=90,
+        )
+        if resp.status_code != 200:
+            return None, None
+        raw = resp.json()["choices"][0]["message"]["content"]
+        cleaned = _clean_json(raw)
+        data = json.loads(cleaned)
+        derived = data.get("derived_state")
+        patterns = data.get("patterns_update")
+        return (json.dumps(derived, ensure_ascii=False) if derived else None,
+                json.dumps(patterns, ensure_ascii=False) if patterns else None)
+    except Exception:
+        return None, None
 
 def _build_messages(system_prompt, container, thread_msgs, container_patterns, context_block=None):
     out = [{"role": "system", "content": system_prompt}]

@@ -956,6 +956,7 @@ async function stream(tid){
             if(d.type==='skills'){document.getElementById('sSkills').innerHTML=d.skills.map(s=>`<span class="skill-tag">${SKILL_NAMES[s]||s}</span>`).join('');}
             if(d.type==='thinking'){/* thinking hidden */}
             if(d.type==='content'){if(!hasCont){hasCont=true;document.getElementById('sPhase').textContent=isQ?'检索':'观察';document.getElementById('sThink').style.display='none';document.getElementById('sCont').style.display='block';}document.getElementById('sCont').textContent+=d.text;scrollBot();}
+            if(d.type==='phase'){const ph=document.getElementById('sPhase');if(ph){ph.textContent=d.text;ph.style.display='block';}}
             if(d.type==='derived'){document.getElementById('sDerived').innerHTML=renderDerived(d.data);}
             if(d.type==='context'){showContextWindow(d.data);}
             if(d.type==='error'){area.innerHTML+=`<div class="err-msg">${esc(d.text)}</div>`;resolve();return;}
