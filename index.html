@@ -257,6 +257,11 @@
   .ep-item-preview { font-family:var(--serif); font-size:13px; color:var(--text); line-height:1.6; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .ep-item-meta { display:flex; gap:5px; margin-top:4px; flex-wrap:wrap; align-items:center; }
   .ep-empty { padding:24px 16px; text-align:center; color:var(--muted); font-size:12px; }
+  .ep-search { padding:8px 12px; border-bottom:1px solid var(--bsub); }
+  .ep-search input { width:100%; box-sizing:border-box; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:var(--mono); font-size:11px; padding:6px 10px; border-radius:3px; outline:none; transition:border-color .12s; }
+  .ep-search input::placeholder { color:var(--muted); }
+  .ep-search input:focus { border-color:var(--accdim); }
+  .ep-search-status { font-family:var(--mono); font-size:10px; color:var(--muted); margin-top:4px; min-height:14px; }
 
   /* === Modals === */
   .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:100; align-items:center; justify-content:center; }
@@ -373,6 +378,10 @@
               <button class="ep-close" onclick="closeEntryPicker()">×</button>
             </div>
           </div>
+          <div class="ep-search">
+            <input type="text" id="epSearchInput" placeholder="按主题搜索..." oninput="onEpSearch(this.value)">
+            <div class="ep-search-status" id="epSearchStatus"></div>
+          </div>
           <div class="ep-list" id="epList"></div>
         </div>
         <div class="chat-input" id="chatInput">
@@ -419,6 +428,7 @@ let S = { containers:[], activeC:null, threads:[], activeT:null, type:'reflect',
   showSynthesis: false, synthData: null,
   mobPanel: 'containers' // 'containers' | 'threads' | 'chat'
 };
+let _epSearchTimer = null;
 
 const isMobile = () => window.innerWidth <= 768;
 
@@ -872,11 +882,23 @@ async function toggleEntryPicker(){
   const exclude=S.activeT?.id||'';
   const res=await(await fetch(`/api/containers/${S.activeC.id}/entries?exclude_thread=${exclude}`)).json();
   S.entryPickerData=res.entries||[];
+  const inp=document.getElementById('epSearchInput');
+  if(inp)inp.value='';
+  const st=document.getElementById('epSearchStatus');
+  if(st)st.textContent='';
   renderEntryPicker();
   document.getElementById('entryPicker').classList.add('open');
   S.entryPickerOpen=true;
 }
-function closeEntryPicker(){document.getElementById('entryPicker').classList.remove('open');S.entryPickerOpen=false;}
+function closeEntryPicker(){
+  document.getElementById('entryPicker').classList.remove('open');
+  S.entryPickerOpen=false;
+  clearTimeout(_epSearchTimer);
+  const inp=document.getElementById('epSearchInput');
+  if(inp)inp.value='';
+  const st=document.getElementById('epSearchStatus');
+  if(st)st.textContent='';
+}
 function renderEntryPicker(){
   const list=document.getElementById('epList');
   if(!S.entryPickerData.length){list.innerHTML='<div class="ep-empty">此容器暂无其他记录</div>';return;}
@@ -896,6 +918,46 @@ function toggleEntryPin(mid){
   renderEntryPicker(); updatePinBtn();
 }
 function clearEntryPins(){S.pinnedEntryIds.clear();renderEntryPicker();updatePinBtn();}
+function onEpSearch(value){
+  clearTimeout(_epSearchTimer);
+  const st=document.getElementById('epSearchStatus');
+  const q=value.trim();
+  if(!q){
+    if(st)st.textContent='';
+    renderEntryPicker();
+    return;
+  }
+  _epSearchTimer=setTimeout(()=>doEpSearch(q),400);
+}
+async function doEpSearch(q){
+  const st=document.getElementById('epSearchStatus');
+  const list=document.getElementById('epList');
+  if(st)st.textContent='搜索中...';
+  list.innerHTML='';
+  try{
+    const res=await(await fetch('/api/search',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({query:q})
+    })).json();
+    const results=res.results||[];
+    if(st)st.textContent=results.length?`${results.length} 条结果`:'无匹配结果';
+    if(!results.length){list.innerHTML='<div class="ep-empty">未找到相关记录</div>';return;}
+    list.innerHTML=results.map(e=>{
+      const sel=S.pinnedEntryIds.has(e.message_id);
+      const d=new Date(e.date).toLocaleDateString('zh-CN',{month:'short',day:'numeric'});
+      const meta=e.derived_state_summary?`<span class="theme-tag">${esc(e.derived_state_summary)}</span>`:'';
+      return `<div class="ep-item ${sel?'selected':''}" onclick="toggleEntryPin('${e.message_id}')">
+        <div class="ep-item-head"><span class="ep-item-date">${d}</span><span class="ep-item-thread">${esc(e.container_name)}</span></div>
+        <div class="ep-item-preview">${esc(e.content)}</div>
+        <div class="ep-item-meta">${meta}</div>
+      </div>`;
+    }).join('');
+  }catch(err){
+    if(st)st.textContent='搜索失败';
+    list.innerHTML='<div class="ep-empty">搜索出错，请重试</div>';
+  }
+}
 function updatePinBtn(){
   const btn=document.getElementById('pinEntriesBtn');
   const n=S.pinnedEntryIds.size;

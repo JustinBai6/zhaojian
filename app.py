@@ -4,7 +4,7 @@ Container → Thread → Messages with dynamic skill selection.
 Per-entry Derived State extraction via combined output.
 User-directed entry-level context pinning.
 """
-import os, json, uuid, sqlite3, hashlib, secrets
+import os, json, uuid, sqlite3, hashlib, secrets, threading
 from datetime import datetime
 from pathlib import Path
 from functools import wraps
@@ -59,6 +59,7 @@ def init_db():
         "ALTER TABLE containers ADD COLUMN patterns TEXT DEFAULT '{}'",
         "ALTER TABLE messages ADD COLUMN derived_state TEXT",
         "ALTER TABLE messages ADD COLUMN msg_type TEXT DEFAULT 'reflect'",
+        "ALTER TABLE messages ADD COLUMN embedding TEXT",
     ]
     for m in migrations:
         try:
@@ -69,6 +70,78 @@ def init_db():
 
 init_db()
 hash_pw = lambda p: hashlib.sha256(p.encode()).hexdigest()
+
+def _compute_embedding(text: str, api_key: str):
+    """Call DeepSeek embeddings API. Returns list[float] or None on failure."""
+    try:
+        resp = http_requests.post(
+            "https://api.deepseek.com/embeddings",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"model": "text-embedding-v1", "input": text},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            return None
+        return resp.json()["data"][0]["embedding"]
+    except Exception:
+        return None
+
+def _cosine_similarity(a: list, b: list) -> float:
+    """Pure-Python cosine similarity. Returns 0.0 on any error."""
+    try:
+        dot = sum(x * y for x, y in zip(a, b))
+        norm_a = sum(x * x for x in a) ** 0.5
+        norm_b = sum(x * x for x in b) ** 0.5
+        if norm_a == 0.0 or norm_b == 0.0:
+            return 0.0
+        return dot / (norm_a * norm_b)
+    except Exception:
+        return 0.0
+
+def _find_relevant_entries(db, user_id: str, exclude_thread_id: str, text: str, api_key: str, n: int = 3) -> list:
+    """Find top-N semantically similar past entries via embedding cosine similarity.
+    Returns [] if embedding fails or no entries have embeddings yet."""
+    query_embedding = _compute_embedding(text, api_key)
+    if query_embedding is None:
+        return []
+    rows = db.execute("""
+        SELECT m.id, m.thread_id, m.content, m.timestamp, m.embedding
+        FROM messages m JOIN threads t ON t.id = m.thread_id
+        WHERE t.user_id=? AND m.role='user' AND m.thread_id!=? AND m.embedding IS NOT NULL
+        ORDER BY m.timestamp DESC
+    """, (user_id, exclude_thread_id)).fetchall()
+    if not rows:
+        return []
+    scored = []
+    for row in rows:
+        try:
+            emb = json.loads(row["embedding"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        scored.append((_cosine_similarity(query_embedding, emb), row))
+    if not scored:
+        return []
+    scored.sort(key=lambda x: -x[0])
+    results = []
+    for score, row in scored[:n]:
+        thread_info = db.execute(
+            "SELECT t.id, t.created, c.name as container_name FROM threads t "
+            "JOIN containers c ON c.id=t.container_id WHERE t.id=?",
+            (row["thread_id"],)).fetchone()
+        if not thread_info:
+            continue
+        asst = db.execute(
+            "SELECT content FROM messages WHERE thread_id=? AND role='assistant' AND timestamp>? "
+            "ORDER BY timestamp ASC LIMIT 1",
+            (row["thread_id"], row["timestamp"])).fetchone()
+        obs = asst["content"] if asst and asst["content"] != "已记录。" else None
+        results.append({
+            "message_id": row["id"], "thread_id": row["thread_id"],
+            "container_name": thread_info["container_name"],
+            "date": row["timestamp"][:10], "content": row["content"],
+            "observation": obs, "score": round(score, 4),
+        })
+    return results
 
 def login_required(f):
     @wraps(f)
@@ -539,6 +612,80 @@ def container_entries(cid):
     db.close()
     return jsonify({"entries": entries})
 
+# === Semantic Search ===
+@app.route("/api/search", methods=["POST"])
+@login_required
+def search_entries():
+    """Semantic search across all user entries. Falls back to substring match."""
+    d = request.json or {}
+    query = (d.get("query") or "").strip()
+    if not query:
+        return jsonify({"results": []})
+
+    db = get_db()
+    user = db.execute("SELECT api_key FROM users WHERE id=?", (uid(),)).fetchone()
+    api_key = (user["api_key"] if user and user["api_key"] else "") or SHARED_API_KEY
+
+    # Fetch all user messages with stored embeddings
+    rows = db.execute("""
+        SELECT m.id, m.thread_id, m.content, m.timestamp, m.embedding, m.derived_state,
+               t.container_id, c.name as container_name
+        FROM messages m
+        JOIN threads t ON t.id = m.thread_id
+        JOIN containers c ON c.id = t.container_id
+        WHERE t.user_id=? AND m.role='user' AND m.embedding IS NOT NULL
+        ORDER BY m.timestamp DESC
+    """, (uid(),)).fetchall()
+
+    query_embedding = _compute_embedding(query, api_key) if api_key else None
+
+    if query_embedding and rows:
+        scored = []
+        for row in rows:
+            try:
+                emb = json.loads(row["embedding"])
+            except (json.JSONDecodeError, TypeError):
+                continue
+            scored.append((_cosine_similarity(query_embedding, emb), row))
+        scored.sort(key=lambda x: -x[0])
+        top_rows = [row for _, row in scored[:10]]
+    elif rows:
+        q_lower = query.lower()
+        top_rows = [row for row in rows if q_lower in row["content"].lower()][:10]
+    else:
+        all_rows = db.execute("""
+            SELECT m.id, m.thread_id, m.content, m.timestamp, m.derived_state,
+                   t.container_id, c.name as container_name
+            FROM messages m
+            JOIN threads t ON t.id = m.thread_id
+            JOIN containers c ON c.id = t.container_id
+            WHERE t.user_id=? AND m.role='user'
+            ORDER BY m.timestamp DESC
+        """, (uid(),)).fetchall()
+        q_lower = query.lower()
+        top_rows = [r for r in all_rows if q_lower in r["content"].lower()][:10]
+
+    results = []
+    for row in top_rows:
+        ds_summary = None
+        if row["derived_state"]:
+            try:
+                ds = json.loads(row["derived_state"])
+                parts = (ds.get("syntactic_signals") or [])[:2] + (ds.get("high_frequency_words") or [])[:2]
+                if parts:
+                    ds_summary = " · ".join(parts)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        results.append({
+            "message_id": row["id"], "thread_id": row["thread_id"],
+            "container_id": row["container_id"], "container_name": row["container_name"],
+            "date": row["timestamp"][:10], "content": row["content"][:100],
+            "derived_state_summary": ds_summary,
+        })
+
+    db.close()
+    return jsonify({"results": results})
+
 # === Containers ===
 @app.route("/api/containers", methods=["GET"])
 @login_required
@@ -671,6 +818,7 @@ def observe(tid):
     msgs = db.execute("SELECT * FROM messages WHERE thread_id=? ORDER BY timestamp ASC", (tid,)).fetchall()
     container_patterns = container["patterns"] if container["patterns"] and container["patterns"] != '{}' else None
     user = db.execute("SELECT api_key FROM users WHERE id=?", (uid(),)).fetchone()
+    last_user_text = next((m["content"] for m in reversed(msgs) if m["role"] == "user"), "")
 
     # Detect last user message's type (per-message, not per-thread)
     last_user_type = "reflect"
@@ -779,31 +927,56 @@ def observe(tid):
             )
             pinned_context_info = {"type": "thread", "thread_id": pinned_context_id, "title": ctx_thread["title"], "preview": user_content[:80], "auto": False}
     else:
-        same_container = db.execute(
-            "SELECT t.id, t.title, t.container_id, c.name as container_name, t.created "
-            "FROM threads t JOIN containers c ON c.id = t.container_id "
-            "WHERE t.container_id=? AND t.id!=? AND t.user_id=? ORDER BY t.updated DESC LIMIT 10",
-            (t["container_id"], tid, uid())).fetchall()
-        other_threads = []
-        if len(same_container) < 10:
-            needed = 10 - len(same_container)
-            same_ids = [r["id"] for r in same_container] + [tid]
-            placeholders = ",".join("?" * len(same_ids))
-            other_threads = db.execute(
-                f"SELECT t.id, t.title, t.container_id, c.name as container_name, t.created "
-                f"FROM threads t JOIN containers c ON c.id = t.container_id "
-                f"WHERE t.container_id!=? AND t.user_id=? AND t.id NOT IN ({placeholders}) ORDER BY t.updated DESC LIMIT ?",
-                [t["container_id"], uid()] + same_ids + [needed]).fetchall()
-        all_ctx_threads = list(same_container) + list(other_threads)
-        summaries = []
-        for ct in all_ctx_threads[:10]:
-            first_user = db.execute("SELECT content FROM messages WHERE thread_id=? AND role='user' ORDER BY timestamp ASC LIMIT 1", (ct["id"],)).fetchone()
-            preview = first_user["content"][:50] if first_user else ""
-            summaries.append({"id": ct["id"], "container_name": ct["container_name"], "date": ct["created"][:10], "title": ct["title"], "preview": preview})
-        if summaries:
-            lines = "\n".join(f"[ID:{s['id']}] [{s['container_name']}] {s['date']}: {s['title']} — {s['preview']}" for s in summaries)
-            context_block = f"\n=== 可选参照记录 ===\n{lines}\n=== 选择说明 ===\n在输出末尾附加 {CONTEXT_ID_MK} 换行后写入最相关记录的ID（仅ID），若无相关则写 none。\n"
-            auto_context_threads = {s["id"]: s for s in summaries}
+        # Try embedding-based auto-context first
+        _api_key_for_embed = (user["api_key"] if user and user["api_key"] else "") or SHARED_API_KEY
+        auto_injected_entries = []
+        if last_user_text and _api_key_for_embed:
+            auto_injected_entries = _find_relevant_entries(db, uid(), tid, last_user_text, _api_key_for_embed)
+        if auto_injected_entries:
+            entry_blocks = []
+            for e in auto_injected_entries:
+                block = f"[来源]: {e['container_name']}  [日期]: {e['date']}\n[日记]: {e['content']}\n"
+                if e["observation"]:
+                    block += f"[照鉴]: {e['observation']}\n"
+                entry_blocks.append(block)
+            context_block = (
+                f"\n=== 自动识别的相关记录（{len(entry_blocks)}条） ===\n" +
+                "\n---\n".join(entry_blocks) +
+                "=== 参照结束 ===\n"
+            )
+            pinned_context_info = {
+                "type": "entries", "count": len(entry_blocks), "auto": True,
+                "entries": [{"thread_id": e["thread_id"], "container_name": e["container_name"],
+                             "date": e["date"], "preview": e["content"][:80], "score": e["score"]}
+                            for e in auto_injected_entries],
+            }
+        else:
+            # Fallback: recency-based LLM-selectable list
+            same_container = db.execute(
+                "SELECT t.id, t.title, t.container_id, c.name as container_name, t.created "
+                "FROM threads t JOIN containers c ON c.id = t.container_id "
+                "WHERE t.container_id=? AND t.id!=? AND t.user_id=? ORDER BY t.updated DESC LIMIT 10",
+                (t["container_id"], tid, uid())).fetchall()
+            other_threads = []
+            if len(same_container) < 10:
+                needed = 10 - len(same_container)
+                same_ids = [r["id"] for r in same_container] + [tid]
+                placeholders = ",".join("?" * len(same_ids))
+                other_threads = db.execute(
+                    f"SELECT t.id, t.title, t.container_id, c.name as container_name, t.created "
+                    f"FROM threads t JOIN containers c ON c.id = t.container_id "
+                    f"WHERE t.container_id!=? AND t.user_id=? AND t.id NOT IN ({placeholders}) ORDER BY t.updated DESC LIMIT ?",
+                    [t["container_id"], uid()] + same_ids + [needed]).fetchall()
+            all_ctx_threads = list(same_container) + list(other_threads)
+            summaries = []
+            for ct in all_ctx_threads[:10]:
+                first_user = db.execute("SELECT content FROM messages WHERE thread_id=? AND role='user' ORDER BY timestamp ASC LIMIT 1", (ct["id"],)).fetchone()
+                preview = first_user["content"][:50] if first_user else ""
+                summaries.append({"id": ct["id"], "container_name": ct["container_name"], "date": ct["created"][:10], "title": ct["title"], "preview": preview})
+            if summaries:
+                lines = "\n".join(f"[ID:{s['id']}] [{s['container_name']}] {s['date']}: {s['title']} — {s['preview']}" for s in summaries)
+                context_block = f"\n=== 可选参照记录 ===\n{lines}\n=== 选择说明 ===\n在输出末尾附加 {CONTEXT_ID_MK} 换行后写入最相关记录的ID（仅ID），若无相关则写 none。\n"
+                auto_context_threads = {s["id"]: s for s in summaries}
 
     # Cross-container pattern injection
     cross_container_block = None
@@ -868,6 +1041,24 @@ def observe(tid):
                     if patterns_json: sdb.execute("UPDATE containers SET patterns=? WHERE id=?", (patterns_json, t["container_id"]))
                     if derived_json and last_user_mid: sdb.execute("UPDATE messages SET derived_state=? WHERE id=?", (derived_json, last_user_mid))
                     sdb.commit(); sdb.close()
+                    # Background: compute and store embedding for the user's message
+                    _embed_text = last_user_text
+                    _embed_mid = last_user_mid
+                    _embed_key = api_key
+                    def _store_embedding():
+                        if not _embed_text or not _embed_mid or not _embed_key:
+                            return
+                        emb = _compute_embedding(_embed_text, _embed_key)
+                        if emb is None:
+                            return
+                        try:
+                            edb = get_db()
+                            edb.execute("UPDATE messages SET embedding=? WHERE id=?",
+                                        (json.dumps(emb), _embed_mid))
+                            edb.commit(); edb.close()
+                        except Exception:
+                            pass
+                    threading.Thread(target=_store_embedding, daemon=True).start()
                     if content_buffer and not patterns_started and not derived_started:
                         yield f"data: {json.dumps({'type':'content','text':content_buffer})}\n\n"
                     if derived_json:
