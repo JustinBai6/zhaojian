@@ -4,7 +4,7 @@ Container → Thread → Messages with dynamic skill selection.
 Per-entry Derived State extraction via combined output.
 User-directed entry-level context pinning.
 """
-import os, json, uuid, sqlite3, hashlib, secrets
+import os, json, uuid, sqlite3, hashlib, secrets, threading
 from datetime import datetime
 from pathlib import Path
 from functools import wraps
@@ -609,10 +609,17 @@ def create_thread(cid):
     title = text[:40] + ("..." if len(text) > 40 else "")
     db = get_db()
     db.execute("INSERT INTO threads VALUES (?,?,?,?,?,?,?)", (tid, cid, uid(), title, ttype, now, now))
-    db.execute("INSERT INTO messages (id,thread_id,role,content,thinking,skills_used,timestamp,derived_state,msg_type) VALUES (?,?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "user", text, None, None, now, None, ttype))
+    user_mid = uuid.uuid4().hex[:8]
+    db.execute("INSERT INTO messages (id,thread_id,role,content,thinking,skills_used,timestamp,derived_state,msg_type) VALUES (?,?,?,?,?,?,?,?,?)", (user_mid, tid, "user", text, None, None, now, None, ttype))
     if ttype == "vent":
         db.execute("INSERT INTO messages (id,thread_id,role,content,thinking,skills_used,timestamp,derived_state,msg_type) VALUES (?,?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "assistant", "已记录。", None, None, now, None, "vent"))
-        db.commit(); db.close(); return jsonify({"thread_id": tid, "stream": False})
+        db.commit()
+        user = db.execute("SELECT api_key FROM users WHERE id=?", (uid(),)).fetchone()
+        db.close()
+        api_key = (user["api_key"] if user and user["api_key"] else "") or SHARED_API_KEY
+        if api_key:
+            threading.Thread(target=_vent_extraction_bg, args=(user_mid, text, cid, api_key), daemon=True).start()
+        return jsonify({"thread_id": tid, "stream": False})
     db.commit(); db.close()
     return jsonify({"thread_id": tid, "stream": True})
 
@@ -664,11 +671,17 @@ def reply(tid):
     msg_type = d.get("type", "reflect")
     t = db.execute("SELECT * FROM threads WHERE id=? AND user_id=?", (tid, uid())).fetchone()
     if not t: db.close(); return jsonify({"error": "Not found"}), 404
-    db.execute("INSERT INTO messages (id,thread_id,role,content,thinking,skills_used,timestamp,derived_state,msg_type) VALUES (?,?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "user", d["text"], None, None, now, None, msg_type))
+    user_mid = uuid.uuid4().hex[:8]
+    db.execute("INSERT INTO messages (id,thread_id,role,content,thinking,skills_used,timestamp,derived_state,msg_type) VALUES (?,?,?,?,?,?,?,?,?)", (user_mid, tid, "user", d["text"], None, None, now, None, msg_type))
     db.execute("UPDATE threads SET updated=? WHERE id=?", (now, tid))
     if msg_type == "vent":
         db.execute("INSERT INTO messages (id,thread_id,role,content,thinking,skills_used,timestamp,derived_state,msg_type) VALUES (?,?,?,?,?,?,?,?,?)", (uuid.uuid4().hex[:8], tid, "assistant", "已记录。", None, None, now, None, "vent"))
-        db.commit(); db.close()
+        db.commit()
+        user = db.execute("SELECT api_key FROM users WHERE id=?", (uid(),)).fetchone()
+        db.close()
+        api_key = (user["api_key"] if user and user["api_key"] else "") or SHARED_API_KEY
+        if api_key:
+            threading.Thread(target=_vent_extraction_bg, args=(user_mid, d["text"], t["container_id"], api_key), daemon=True).start()
         return jsonify({"stream": False})
     db.commit(); db.close()
     return jsonify({"stream": True})
@@ -936,6 +949,24 @@ def _run_extraction(user_text: str, container, container_patterns, observation: 
                 json.dumps(patterns, ensure_ascii=False) if patterns else None)
     except Exception:
         return None, None
+
+def _vent_extraction_bg(mid: str, text: str, container_id: str, api_key: str):
+    """Run extraction for a vent entry in the background and persist results."""
+    try:
+        db = get_db()
+        container = db.execute("SELECT * FROM containers WHERE id=?", (container_id,)).fetchone()
+        if not container: db.close(); return
+        container_patterns = container["patterns"] if container["patterns"] and container["patterns"] != '{}' else None
+        db.close()
+        derived_json, patterns_json = _run_extraction(text, container, container_patterns, "", api_key)
+        db = get_db()
+        if patterns_json:
+            db.execute("UPDATE containers SET patterns=? WHERE id=?", (patterns_json, container_id))
+        if derived_json:
+            db.execute("UPDATE messages SET derived_state=? WHERE id=?", (derived_json, mid))
+        db.commit(); db.close()
+    except Exception:
+        pass
 
 def _build_messages(system_prompt, container, thread_msgs, container_patterns, context_block=None):
     out = [{"role": "system", "content": system_prompt}]
