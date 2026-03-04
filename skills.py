@@ -434,7 +434,17 @@ EXTRACTION_PROMPT = """你是语言特征提取器。给定日记文本，从文
     "self_ref_count": <int, 第一人称自我指涉数量>,
     "other_ref_count": <int, 第三人称他者指涉数量>,
     "syntactic_signals": ["仅从以下标签中选择适用的：软化词偏多、否定词偏多、他者为中心、义务词偏多、转折密集、时态偏向过去、时态偏向未来、主语消失、句式断裂、被动句偏多"],
-    "salience_markers": ["文本中异常显著或反复出现的短语"]
+    "salience_markers": ["文本中异常显著或反复出现的短语"],
+    "distortion_flags": ["仅从以下认知扭曲标签中选择实际存在于文本的：catastrophizing、black_white_thinking、overgeneralization、personalization、mind_reading、emotional_reasoning、should_statements、labeling、magnification、mental_filtering。无则为空数组。"],
+    "theme_tags": ["从以下主题标签中选择适用的（可多选）：control、inadequacy、obligation、ambition、isolation、comparison、self_worth、dependence、achievement、loss、identity、conflict、avoidance、perfectionism、relationships、body、work、time。仅选择文本中有直接语言依据的标签。无则为空数组。"],
+    "language_patterns": {
+      "hedge_ratio": <float, 软化词数量除以总字数>,
+      "negation_ratio": <float, 否定词数量除以总字数>,
+      "self_ref_ratio": <float, 第一人称数量除以总字数>,
+      "absolutist_count": <int, 绝对化语言数量，如"总是"、"从来"、"永远"、"绝对"、"一定"、"不可能">,
+      "obligation_count": <int, 义务词数量，如"应该"、"必须"、"不得不">
+    },
+    "contradiction_flags": ["如果当前文本与现有模式档案中记录的语言模式或立场存在明显矛盾或反转，用一句话描述该矛盾。无则为空数组。仅基于档案中实际存在的内容。"]
   },
   "patterns_update": {
     "entries_analyzed": <int, 在现有档案基础上加1>,
@@ -443,7 +453,8 @@ EXTRACTION_PROMPT = """你是语言特征提取器。给定日记文本，从文
     "linguistic_patterns": ["跨记录的语言规律性观察"],
     "structural_patterns": ["跨记录的文本结构规律"],
     "somatic_markers": ["身体或健康相关词汇"],
-    "new_this_entry": ["本条记录中首次出现的词语"]
+    "new_this_entry": ["本条记录中首次出现的词语"],
+    "theme_index": {"<主题标签>": <int, 该标签在所有记录中出现的次数，在现有档案基础上累积>}
   }
 }
 
@@ -451,6 +462,11 @@ EXTRACTION_PROMPT = """你是语言特征提取器。给定日记文本，从文
 - affect_valence和affect_intensity必须是数字，不能是字符串
 - high_frequency_words：仅统计字面重复3次及以上的词
 - syntactic_signals：仅使用以上固定标签，不适用则为空数组
+- distortion_flags：仅使用以上固定英文标签，不适用则为空数组
+- theme_tags：仅使用以上固定英文标签，无直接语言依据则为空数组
+- language_patterns中的ratio值：字数为0时输出0.0
+- contradiction_flags：仅在有明确档案依据时才输出，不捏造，无则为空数组
+- patterns_update.theme_index：在现有档案的theme_index基础上累积计数，档案中不存在theme_index时从空对象开始
 - patterns_update：在输入的现有档案基础上增量更新"""
 
 

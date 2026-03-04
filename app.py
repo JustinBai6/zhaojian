@@ -253,6 +253,22 @@ def container_trends(cid):
             if sig: signal_counts[sig] = signal_counts.get(sig, 0) + 1
     signal_freq = sorted(signal_counts.items(), key=lambda x: -x[1])[:10]
 
+    # 4b. Cognitive distortion frequency (from distortion_flags)
+    distortion_counts = {}
+    for e in entries_with_state:
+        for d in (e["derived"].get("distortion_flags") or []):
+            d = d.strip()
+            if d: distortion_counts[d] = distortion_counts.get(d, 0) + 1
+    distortion_freq = sorted(distortion_counts.items(), key=lambda x: -x[1])
+
+    # 4c. Theme tag frequency (from theme_tags)
+    theme_counts = {}
+    for e in entries_with_state:
+        for t in (e["derived"].get("theme_tags") or []):
+            t = t.strip()
+            if t: theme_counts[t] = theme_counts.get(t, 0) + 1
+    theme_freq = sorted(theme_counts.items(), key=lambda x: -x[1])
+
     # 5. Salience markers (collect unique, recent first)
     salience = []
     seen = set()
@@ -287,6 +303,8 @@ def container_trends(cid):
             "avg_pivot_ratio": round(avg_pivot_ratio, 4),
             "word_freq": [{"word": w, "count": c} for w, c in word_freq],
             "signal_freq": [{"signal": s, "count": c} for s, c in signal_freq],
+            "distortion_freq": [{"distortion": d, "count": c} for d, c in distortion_freq],
+            "theme_freq": [{"theme": t, "count": c} for t, c in theme_freq],
             "salience_markers": salience,
             "activity": [{"date": d, "count": c} for d, c in sorted(day_counts.items())],
         }
